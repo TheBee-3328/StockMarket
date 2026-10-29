@@ -178,6 +178,7 @@ public final class RealStockPriceFeed implements AutoCloseable {
     private volatile long lastRateLimitAt;
     private volatile ItemID usdAnchorItemID;
     private boolean warnedUsdOwnershipConflict;
+    private boolean usdPluginsDetached = false;
 
     private RealStockPriceFeed(MinecraftServer server, ServerMarketManager manager, Path configPath) {
         this(server, manager, configPath, null);
@@ -581,6 +582,11 @@ public final class RealStockPriceFeed implements AutoCloseable {
                 return;
             }
 
+            usdMarket.getSettings().ignorePluginAutosubscribe = true;
+            if (!usdPluginsDetached) {
+                manager.detachMarketFromPlugins(itemID);
+                usdPluginsDetached = true;
+            }
             long rawOneUsd = Math.max(1L, MarketManager.convertToRawAmountStatic(1.0));
             usdMarket.setExternalReferencePrice("USD", rawOneUsd);
         } catch (Exception e) {
