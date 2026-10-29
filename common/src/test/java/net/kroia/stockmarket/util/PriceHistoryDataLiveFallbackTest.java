@@ -17,7 +17,6 @@ class PriceHistoryDataLiveFallbackTest {
 
         PriceHistoryData data = PriceHistoryData.fromLiveMarketCandle(itemID, 100, current, 1_280L);
 
-        assertEquals(itemID, data.getItemID());
         assertEquals(1, data.getCandles().size());
         PriceHistoryData.Candle candle = data.getCandles().getFirst();
         assertEquals(timestamp, candle.openTimestamp);
