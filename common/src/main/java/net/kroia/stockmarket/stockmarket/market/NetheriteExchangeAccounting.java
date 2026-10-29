@@ -99,8 +99,7 @@ public final class NetheriteExchangeAccounting {
 
         long principalIngots = player.netheritePrincipalUsdRaw / valuePerIngot;
         long profitAllowanceRaw = getAvailableProfitAllowanceRaw(player);
-        long profitIngots = profitAllowanceRaw / valuePerIngot
-                .min(BigInteger.valueOf(Long.MAX_VALUE)).longValue();
+        long profitIngots = profitAllowanceRaw / valuePerIngot;
         return addSaturated(principalIngots, profitIngots);
     }
 
