@@ -29,7 +29,7 @@ jobs:
         working-directory: ../../MC_ModUtilities/mc_1.21.1_MC_ModUtilities
         run: |
           chmod +x gradlew
-          ./gradlew :common:build :neoforge:build --no-daemon
+          ./gradlew :common:build :fabric:build :neoforge:build --no-daemon
 
       - name: Checkout BankSystem
         run: |
