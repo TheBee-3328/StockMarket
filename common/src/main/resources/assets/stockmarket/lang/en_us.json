@@ -5,6 +5,7 @@
   "item.stockmarket.stockmarket_display_block": "Stock Market Display",
   "item.stockmarket.trading_software": "Trading Software",
   "item.stockmarket.newspaper": "Newspaper",
+  "item.stockmarket.share_usd": "US Dollar (USD base token)",
   "item.stockmarket.share_xau": "XAU - Gold (GLD proxy)",
   "item.stockmarket.share_nas100": "NASDAQ-100 (NAS100 / QQQ proxy)",
   "item.stockmarket.share_sp500": "S&P 500 (SP500 / SPY proxy)",
