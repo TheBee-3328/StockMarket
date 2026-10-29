@@ -193,39 +193,35 @@ public class PriceHistoryData
 
     /**
      * Builds a usable, live-only history when a market has not persisted its first
-     * candle yet. A newly created market can be opened in the chart before the first
-     * candle-save interval has elapsed (or while the integrated world is paused).
-     * The fallback contains the market's current in-memory OHLC candle, so chart
-     * providers such as CrossRateMarket can compute a non-zero initial series.
+     * candle yet. The pure normalization helper is separated from Minecraft types
+     * so its OHLC edge cases can be tested without bootstrapping a game registry.
      */
     public static PriceHistoryData fromLiveMarketCandle(
             ItemID itemID,
             int itemScaleFactor,
             @Nullable MarketPriceStruct liveCandle,
             long currentMarketPrice) {
-        long current = Math.max(0L, currentMarketPrice);
-        if (current <= 0L && liveCandle != null) {
-            current = Math.max(liveCandle.open(), Math.max(liveCandle.high(), liveCandle.low()));
-        }
+        LiveCandleFallback.Seed seed = LiveCandleFallback.normalize(
+                liveCandle != null,
+                liveCandle != null ? liveCandle.open() : 0L,
+                liveCandle != null ? liveCandle.low() : 0L,
+                liveCandle != null ? liveCandle.high() : 0L,
+                liveCandle != null ? liveCandle.time() : 0L,
+                liveCandle != null ? liveCandle.tradedVolume() : 0.0f,
+                currentMarketPrice,
+                System.currentTimeMillis());
 
-        long open = liveCandle != null && liveCandle.open() > 0L
-                ? liveCandle.open() : current;
-        long rawHigh = liveCandle != null && liveCandle.high() > 0L
-                ? liveCandle.high() : Math.max(open, current);
-        long rawLow = liveCandle != null && liveCandle.low() > 0L
-                ? liveCandle.low() : Math.min(open, current);
-        long high = Math.max(current, Math.max(open, rawHigh));
-        long low = Math.min(current, Math.min(open, rawLow));
-        long timestamp = liveCandle != null && liveCandle.time() > 0L
-                ? liveCandle.time() : System.currentTimeMillis();
-        float volume = liveCandle != null ? Math.max(0.0f, liveCandle.tradedVolume()) : 0.0f;
-
-        Candle candle = new Candle(timestamp, open, high, low, volume);
+        Candle candle = new Candle(
+                seed.timestamp(),
+                seed.open(),
+                seed.high(),
+                seed.low(),
+                seed.volume());
         return new PriceHistoryData(
                 itemID,
                 itemScaleFactor,
                 new ArrayList<>(List.of(candle)),
-                current,
+                seed.currentPrice(),
                 NO_OLDER_DATA,
                 false);
     }
