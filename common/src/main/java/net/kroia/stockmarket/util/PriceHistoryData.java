@@ -191,6 +191,41 @@ public class PriceHistoryData
         return new PriceHistoryData(itemID, itemScaleFactor, candles, currentMarketPrice);
     }
 
+    /**
+     * Builds a usable, live-only history when a market has not persisted its first
+     * candle yet. The pure normalization helper is separated from Minecraft types
+     * so its OHLC edge cases can be tested without bootstrapping a game registry.
+     */
+    public static PriceHistoryData fromLiveMarketCandle(
+            ItemID itemID,
+            int itemScaleFactor,
+            @Nullable MarketPriceStruct liveCandle,
+            long currentMarketPrice) {
+        LiveCandleFallback.Seed seed = LiveCandleFallback.normalize(
+                liveCandle != null,
+                liveCandle != null ? liveCandle.open() : 0L,
+                liveCandle != null ? liveCandle.low() : 0L,
+                liveCandle != null ? liveCandle.high() : 0L,
+                liveCandle != null ? liveCandle.time() : 0L,
+                liveCandle != null ? liveCandle.tradedVolume() : 0.0f,
+                currentMarketPrice,
+                System.currentTimeMillis());
+
+        Candle candle = new Candle(
+                seed.timestamp(),
+                seed.open(),
+                seed.high(),
+                seed.low(),
+                seed.volume());
+        return new PriceHistoryData(
+                itemID,
+                itemScaleFactor,
+                new ArrayList<>(List.of(candle)),
+                seed.currentPrice(),
+                NO_OLDER_DATA,
+                false);
+    }
+
     public void insert(PriceHistoryData other)
     {
         candles.addAll(other.candles);

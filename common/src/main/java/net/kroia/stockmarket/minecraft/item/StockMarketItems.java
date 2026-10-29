@@ -41,6 +41,8 @@ public class StockMarketItems {
     
 
     // Dedicated market-share items used by the optional Finnhub feed.
+    /** Stable USD quote-unit token used as the fixed HAVE leg in pair mode. */
+    public static final RegistrySupplier<Item> SHARE_USD = registerShare("share_usd");
     public static final RegistrySupplier<Item> SHARE_XAU = registerShare("share_xau");
     public static final RegistrySupplier<Item> SHARE_NAS100 = registerShare("share_nas100");
     public static final RegistrySupplier<Item> SHARE_SP500 = registerShare("share_sp500");
@@ -63,6 +65,28 @@ public class StockMarketItems {
     private static RegistrySupplier<Item> registerShare(String name) {
         return registerItem(name, () -> new Item(
                 new Item.Properties().arch$tab(StockMarketCreativeModeTab.STOCK_MARKET_TAB)));
+    }
+
+    /** Returns whether an item is one of the real-stock counterpart tokens (excluding USD). */
+    public static boolean isUsdQuotedAsset(Item item) {
+        return item == SHARE_XAU.get()
+                || item == SHARE_NAS100.get()
+                || item == SHARE_SP500.get()
+                || item == SHARE_EURUSD.get()
+                || item == SHARE_BTC.get()
+                || item == SHARE_NVDA.get()
+                || item == SHARE_GOOGL.get()
+                || item == SHARE_GOOG.get()
+                || item == SHARE_AAPL.get()
+                || item == SHARE_MSFT.get()
+                || item == SHARE_JPM.get()
+                || item == SHARE_XOM.get()
+                || item == SHARE_LLY.get()
+                || item == SHARE_WMT.get()
+                || item == SHARE_CAT.get()
+                || item == SHARE_V.get()
+                || item == SHARE_DIS.get()
+                || item == SHARE_TSLA.get();
     }
 
 public static <T extends Item> RegistrySupplier<T> registerItem(String name, Supplier<T> item)

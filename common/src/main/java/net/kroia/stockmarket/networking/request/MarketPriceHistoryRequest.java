@@ -113,15 +113,21 @@ public class MarketPriceHistoryRequest extends StockMarketGenericRequest<MarketP
             long oldestOnDisk = (Long) pair[1];
 
             PriceHistoryData data = PriceHistoryData.fromSqlData(list, getCurrentMarketPrice(input.item), getItemFractionScaleFactor());
-            if(data == null)
-            {
-                warn("MarketPriceHistoryRequest failed to fetch data for item: " + input.item);
-                PriceHistoryData empty = new PriceHistoryData(System.currentTimeMillis(), input.item, getItemFractionScaleFactor());
-                // When no rows exist for this market, tell the client there is no earlier data.
-                empty.setOldestAvailableTimestamp(PriceHistoryData.NO_OLDER_DATA);
-                empty.setTruncated(false);
-                future.complete(empty);
-                return;
+            if (data == null) {
+                // Expected for a brand-new market until the first candle-save interval
+                // has elapsed. Return its current in-memory candle instead of a zero-price
+                // placeholder; otherwise charts (especially synthetic cross-rate charts)
+                // have no valid OHLC data when opened immediately after world startup.
+                info("No persisted candle history yet for " + input.item
+                        + "; returning its current live candle as the initial chart data.");
+                IServerMarket liveMarket = getServerMarketManager().getMarket(input.item);
+                MarketPriceStruct liveCandle = liveMarket != null
+                        ? liveMarket.getCurrentMarketPriceStruct() : null;
+                data = PriceHistoryData.fromLiveMarketCandle(
+                        input.item,
+                        getItemFractionScaleFactor(),
+                        liveCandle,
+                        getCurrentMarketPrice(input.item));
             }
 
             // Aggregate into candleDeltaMs-sized buckets when requested. Reuse the

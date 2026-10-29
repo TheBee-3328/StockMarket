@@ -13,6 +13,7 @@ import net.kroia.modutilities.gui.elements.base.GuiElement;
 import net.kroia.modutilities.gui.client.ClientGraphics;
 import net.kroia.modutilities.gui.layout.LayoutGrid;
 import net.kroia.stockmarket.client.company.ShareVisualHelpers;
+import net.kroia.stockmarket.minecraft.item.StockMarketItems;
 import net.kroia.stockmarket.stockmarket.market.ClientMarket;
 import net.kroia.stockmarket.util.StockMarketGuiElement;
 import net.minecraft.client.Minecraft;
@@ -85,6 +86,13 @@ public class PairSelectorWidget extends StockMarketGuiElement {
     /** Currently selected "have" market item. */
     @Nullable
     private ItemID haveMarketID = null;
+
+    /**
+     * Optional fixed quote-currency market. When set, the HAVE leg is pinned to
+     * this market and the user may only choose the counterpart on the WANT leg.
+     */
+    @Nullable
+    private ItemID fixedHaveMarketID = null;
 
     /** Currently selected "want" market item. */
     @Nullable
@@ -315,9 +323,35 @@ public class PairSelectorWidget extends StockMarketGuiElement {
      * Does not fire the onPairSelected callback.
      */
     public void setHaveMarketID(@Nullable ItemID marketID) {
-        haveMarketID = marketID;
+        haveMarketID = fixedHaveMarketID != null ? fixedHaveMarketID : marketID;
         updateHaveDisplay();
         updateRate();
+    }
+
+    /**
+     * Pins the HAVE leg to a quote-currency market (USD for the real-stock
+     * workflow). Passing null restores ordinary item-vs-item selection.
+     */
+    public void setFixedHaveMarketID(@Nullable ItemID marketID) {
+        boolean sameFixedMarket = fixedHaveMarketID == marketID
+                || (fixedHaveMarketID != null && fixedHaveMarketID.equals(marketID));
+        boolean sameSelection = marketID == null
+                || (haveMarketID != null && haveMarketID.equals(marketID));
+        if (sameFixedMarket && sameSelection) return;
+
+        fixedHaveMarketID = marketID;
+        if (marketID != null) {
+            if (dropdownTarget == Side.HAVE) closeDropdown();
+            haveMarketID = marketID;
+            updateHaveDisplay();
+        }
+        swapButton.setEnabled(fixedHaveMarketID == null && dropdownTarget == null);
+        updateRate();
+        refreshBalances();
+    }
+
+    public boolean isHaveSelectionFixed() {
+        return fixedHaveMarketID != null;
     }
 
     /**
@@ -365,9 +399,9 @@ public class PairSelectorWidget extends StockMarketGuiElement {
             return true; // Consume the click (don't let it reach swap button etc.)
         }
 
-        // Check if click is in the "have" area (icon or name label)
+        // The quote-currency leg (USD) is intentionally read-only in fixed-base mode.
         if (isInBounds(mx, my, haveItemView) || isInBounds(mx, my, haveNameLabel) || isInBounds(mx, my, haveLabel)) {
-            openDropdown(Side.HAVE);
+            if (fixedHaveMarketID == null) openDropdown(Side.HAVE);
             return true;
         }
 
@@ -396,6 +430,7 @@ public class PairSelectorWidget extends StockMarketGuiElement {
      * markets except the one already selected on the opposite side.
      */
     private void openDropdown(Side side) {
+        if (side == Side.HAVE && fixedHaveMarketID != null) return;
         dropdownTarget = side;
         dropdownSearchField.setText("");
         populateDropdown();
@@ -435,15 +470,30 @@ public class PairSelectorWidget extends StockMarketGuiElement {
 
         List<ItemID> commodities = new ArrayList<>();
         List<ItemID> companies = new ArrayList<>();
+        boolean fixedUsdPairMode = fixedHaveMarketID != null;
         for (ItemID id : getAvailableMarkets()) {
             if (id.equals(excludeID)) continue;
-            if (ShareVisualHelpers.isCompanyShare(id)) companies.add(id);
-            else commodities.add(id);
+            if (fixedUsdPairMode) {
+                // The real-stock workflow is a quote-currency market, not a generic
+                // commodity-vs-commodity selector. Only configured stock/instrument
+                // tokens are valid counterparts to the fixed USD leg.
+                if (StockMarketItems.isUsdQuotedAsset(id.getStack().getItem())) {
+                    commodities.add(id);
+                }
+            } else if (ShareVisualHelpers.isCompanyShare(id)) {
+                companies.add(id);
+            } else {
+                commodities.add(id);
+            }
         }
         commodityCount = commodities.size();
         companyCount = companies.size();
 
-        List<ItemID> visible = (activeTab == Tab.COMPANIES) ? companies : commodities;
+        // Fixed-USD mode intentionally presents one concise list of real-stock
+        // counterparts independent of the generic Commodities/Companies filter.
+        List<ItemID> visible = fixedUsdPairMode
+                ? commodities
+                : ((activeTab == Tab.COMPANIES) ? companies : commodities);
         sortMarkets(visible, sortByTab.get(activeTab));
 
         for (ItemID marketID : visible) {
@@ -636,7 +686,7 @@ public class PairSelectorWidget extends StockMarketGuiElement {
         haveBalanceLabel.setEnabled(true);
         wantBalanceLabel.setEnabled(true);
         rateLabel.setEnabled(true);
-        swapButton.setEnabled(true);
+        swapButton.setEnabled(fixedHaveMarketID == null);
     }
 
     /**
@@ -679,6 +729,7 @@ public class PairSelectorWidget extends StockMarketGuiElement {
      * Swaps the "have" and "want" selections and fires the callback.
      */
     private void onSwap() {
+        if (fixedHaveMarketID != null) return;
         ItemID temp = haveMarketID;
         haveMarketID = wantMarketID;
         wantMarketID = temp;
