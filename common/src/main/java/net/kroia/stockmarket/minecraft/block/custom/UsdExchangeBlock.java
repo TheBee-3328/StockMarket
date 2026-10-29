@@ -32,7 +32,7 @@ public final class UsdExchangeBlock extends Block {
         if (!level.isClientSide) {
             player.displayClientMessage(Component.literal(
                     "USD Exchange — hold a supported item and right-click: "
-                    + "Coal $1, Copper $2, Iron $5, Gold $20, Emerald $50, "
+                    + "Coal $1, Copper $2, Iron $1, Gold $20, Emerald $50, "
                     + "Diamond $100, Netherite Ingot $500 per item."), true);
         }
         return InteractionResult.SUCCESS;
@@ -85,8 +85,8 @@ public final class UsdExchangeBlock extends Block {
                 || item == Items.LAPIS_LAZULI) return 1;
         if (item == Items.COPPER_INGOT || item == Items.AMETHYST_SHARD
                 || item == Items.QUARTZ) return 2;
-        if (item == Items.RAW_IRON) return 3;
-        if (item == Items.IRON_INGOT) return 5;
+        if (item == Items.RAW_IRON) return 1;
+        if (item == Items.IRON_INGOT) return 1;
         if (item == Items.RAW_GOLD) return 10;
         if (item == Items.GOLD_INGOT) return 20;
         if (item == Items.EMERALD) return 50;
