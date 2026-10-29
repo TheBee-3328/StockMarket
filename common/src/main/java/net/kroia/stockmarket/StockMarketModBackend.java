@@ -309,6 +309,11 @@ public class StockMarketModBackend implements StockMarketAPI {
             loadDataFromFiles(UtilitiesPlatform.getServer());
             preRegisterPresetItemStacks();
             registerItemPriceProvider();
+            if (REAL_STOCK_PRICE_FEED != null) REAL_STOCK_PRICE_FEED.close();
+            REAL_STOCK_PRICE_FEED = RealStockPriceFeed.start(
+                    UtilitiesPlatform.getServer(),
+                    SERVER_INSTANCES.MARKET_MANAGER.getServerMarketManager(),
+                    DataManager.getPresetPath().getParent().resolve("real-stocks.json"));
 
             // Villager trade repricing: build the initial price table now that
             // settings + markets are loaded, and push a fresh table to every
@@ -577,6 +582,10 @@ public class StockMarketModBackend implements StockMarketAPI {
         if (SERVER_INSTANCES != null && SERVER_INSTANCES.BANK_SYSTEM_API != null) {
             SERVER_INSTANCES.BANK_SYSTEM_API.setItemPriceProvider(null);
         }
+        if (REAL_STOCK_PRICE_FEED != null) {
+            REAL_STOCK_PRICE_FEED.close();
+            REAL_STOCK_PRICE_FEED = null;
+        }
         TickEvent.SERVER_PRE.unregister(StockMarketModBackend::onServerTickPre);
         TickEvent.SERVER_POST.unregister(StockMarketModBackend::onServerTick);
         saveDataToFiles(server);
@@ -687,6 +696,8 @@ public class StockMarketModBackend implements StockMarketAPI {
         }
     }
 
+    private static RealStockPriceFeed REAL_STOCK_PRICE_FEED = null;
+
     private static long autosaveTimer_lastMs = 0;
 
     /**
@@ -720,6 +731,7 @@ public class StockMarketModBackend implements StockMarketAPI {
     {
         SERVER_INSTANCES.PLUGIN_MANAGER.getSync().update();
         SERVER_INSTANCES.MARKET_MANAGER.getSync().update();
+        if (REAL_STOCK_PRICE_FEED != null) REAL_STOCK_PRICE_FEED.tick();
 
         // Villager trade repricing: refresh + broadcast the price table when
         // the configured interval elapsed (master-only tick).
