@@ -1,20 +1,20 @@
 # Optional real-stock price feed (NeoForge / Minecraft 1.21.1)
 
-The experimental Twelve Data importer runs on the master server only. It uses the provider's `/price` endpoint, caches the last applied quote in memory, performs HTTPS calls on a daemon worker, and schedules market mutations back onto the Minecraft server thread. Ordinary item markets are not modified unless a ticker mapping is explicitly configured.
+The experimental Twelve Data importer runs on the master server only. It uses the provider's `/price` endpoint, performs HTTPS calls on a daemon worker, and schedules market mutations back onto the Minecraft server thread. The first-run configuration is intentionally safe: `mappings` starts empty and no quotes are fetched until you add explicit ticker mappings and a real API key.
 
 ## Setup
 
 1. Start the server once. The importer creates `world/data/StockMarket/real-stocks.json`.
-2. Obtain a Twelve Data API key and put it in the `apiKey` property.
-3. Configure ticker mappings. Each mapping has `ticker`, `itemId`, and optional positive `scale`.
+2. Obtain a Twelve Data API key and replace the inert API-key placeholder.
+3. Add mappings from ticker to dedicated share-token item IDs. Each mapping has `ticker`, `itemId`, and optional positive `scale`.
 4. Restart the server. The provider is queried at startup and then on the configured interval.
 
-Example mapping format:
+Example configuration (not generated automatically):
 
 ```json
 {
   "enabled": true,
-  "apiKey": "YOUR_TWELVE_DATA_API_KEY",
+  "apiKey": "YOUR_REAL_TWELVE_DATA_API_KEY",
   "refreshSeconds": 60,
   "mappings": [
     { "ticker": "AAPL", "itemId": "examplemod:apple_share", "scale": 1.0 },
@@ -23,13 +23,18 @@ Example mapping format:
 }
 ```
 
-Use items reserved for shares from a content mod or a dedicated share-token mod. Do not map AAPL to `minecraft:apple`, or other ordinary items: the market for that item would then represent the stock instead of its in-game supply and demand. The importer refuses to change a market that already exists.
+Use items reserved for shares from a content mod or a dedicated share-token mod. Do not map a ticker to vanilla items or items already being traded. The importer refuses to adopt an existing market unless that market was previously created by the feed for the same ticker and its ownership marker was persisted. When a ticker is first added, its target item must be unused as a market. Map each item ID to only one ticker.
+
+## Quote and market behavior
+
+Quotes are reference/anchor prices, not an immutable broker tape: a new quote sets the market's current reference price; player fills may move it between refreshes, and the next quote re-anchors it. Player limit orders are not cancelled or repriced by the feed. The regular market update path moves the virtual-liquidity window to the anchor price, preserving overlapping levels and filling only newly exposed levels through the existing default-volume policy. The quote callback itself does not reset the orderbook.
+
+Feed ownership is stored in the market's persisted NBT. The same ticker can therefore keep refreshing its market after a restart, but a legacy or unrelated market cannot be accidentally taken over. If the configured ticker changes for an already-owned item ID, the feed refuses that conflicting mapping.
 
 ## Rate limits and limitations
 
-- Refresh interval is clamped to at least 60 seconds.
-- A short delay is inserted between multiple tickers to avoid bursting the free-tier API quota. A large watchlist cannot be polled every minute under a low-credit plan.
+- Refresh interval is at least 60 seconds, but it is automatically increased when necessary to stay under a conservative 800-credit/day free-tier budget (one `/price` credit per ticker). Five tickers therefore refresh no more often than about every nine minutes at this budget, even if `refreshSeconds` is 60.
+- Requests are spaced at least 8.5 seconds apart. A 429 or a provider response that reports quota/rate-limit exhaustion stops the active batch immediately and applies a five-minute backoff.
 - HTTP/API errors and invalid quotes leave the last valid price untouched.
-- HTTP 429 triggers a five-minute backoff.
-- The current implementation is an experimental price importer, not a fully separate virtual equity asset type. It maps a ticker to a dedicated Minecraft item market; it does not provide fractional shares, dividends, split handling, market-hours behavior, or bid/ask exchange simulation.
-- The default config contains example mappings for vanilla items only to demonstrate the shape. Replace them with dedicated share items before using it on a live server. Because the importer refuses to overwrite an existing market, those vanilla mappings should not be used on a world where those item markets already exist.
+- Shutdown marks the feed closed before interrupting its worker. Any quote callbacks queued by an older feed instance are ignored, and an unavailable/malformed config disables the feed safely.
+- This is an experimental importer, not a fully separate native equity asset type. It does not provide fractional shares, dividends, stock splits, market-hours behavior, or external bid/ask data.
