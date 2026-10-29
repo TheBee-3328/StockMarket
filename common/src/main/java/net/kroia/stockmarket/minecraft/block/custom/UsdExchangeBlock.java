@@ -55,7 +55,7 @@ public final class UsdExchangeBlock extends Block {
         if (unitValue <= 0) {
             player.displayClientMessage(Component.literal(
                     "This item has no fixed USD exchange rate."), true);
-            return InteractionResult.CONSUME;
+            return ItemInteractionResult.CONSUME;
         }
 
         int itemCount = stack.getCount();
