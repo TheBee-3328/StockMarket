@@ -121,6 +121,23 @@ public class ServerMarket implements ServerSaveable, IServerMarket {
     {
         this.currentMarketPrice = newPrice;
     }
+
+    /**
+     * Applies an external reference quote to this market without replacing its
+     * player orderbook or altering the price used by ordinary item markets.
+     * The real-stock importer calls this only for explicitly mapped markets.
+     */
+    public void setExternalReferencePrice(long newPrice)
+    {
+        if (newPrice <= 0) return;
+        long previous = this.currentMarketPrice;
+        this.settings.defaultPrice = newPrice;
+        this.currentMarketPrice = newPrice;
+        this.orderbook.setCurrentMarketPrice(newPrice);
+        this.candleLowPrice = Math.min(this.candleLowPrice, newPrice);
+        this.candleHighPrice = Math.max(this.candleHighPrice, newPrice);
+        if (previous <= 0) this.candleOpenPrice = newPrice;
+    }
     @Override
     public void test_clearOrderbook()
     {
