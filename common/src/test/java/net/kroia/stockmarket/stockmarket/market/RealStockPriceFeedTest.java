@@ -1,6 +1,6 @@
-import com.google.gson.JsonParser;
 package net.kroia.stockmarket.stockmarket.market;
 
+import com.google.gson.JsonParser;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
