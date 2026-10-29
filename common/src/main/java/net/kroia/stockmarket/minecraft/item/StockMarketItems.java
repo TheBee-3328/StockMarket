@@ -67,6 +67,28 @@ public class StockMarketItems {
                 new Item.Properties().arch$tab(StockMarketCreativeModeTab.STOCK_MARKET_TAB)));
     }
 
+    /** Returns whether an item is one of the real-stock counterpart tokens (excluding USD). */
+    public static boolean isUsdQuotedAsset(Item item) {
+        return item == SHARE_XAU.get()
+                || item == SHARE_NAS100.get()
+                || item == SHARE_SP500.get()
+                || item == SHARE_EURUSD.get()
+                || item == SHARE_BTC.get()
+                || item == SHARE_NVDA.get()
+                || item == SHARE_GOOGL.get()
+                || item == SHARE_GOOG.get()
+                || item == SHARE_AAPL.get()
+                || item == SHARE_MSFT.get()
+                || item == SHARE_JPM.get()
+                || item == SHARE_XOM.get()
+                || item == SHARE_LLY.get()
+                || item == SHARE_WMT.get()
+                || item == SHARE_CAT.get()
+                || item == SHARE_V.get()
+                || item == SHARE_DIS.get()
+                || item == SHARE_TSLA.get();
+    }
+
 public static <T extends Item> RegistrySupplier<T> registerItem(String name, Supplier<T> item)
     {
         //BankSystemMod.LOGGER.info("Registering Item: " + name);
