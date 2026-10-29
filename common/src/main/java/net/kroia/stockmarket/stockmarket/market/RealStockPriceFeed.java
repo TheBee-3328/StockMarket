@@ -30,7 +30,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Optional Twelve Data quote importer for the master server.
+ * Optional Finnhub quote importer for the master server.
  *
  * <p>Each ticker must be explicitly mapped to a dedicated share-token item in
  * real-stocks.json. Existing markets without a persisted matching feed-owner
