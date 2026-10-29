@@ -500,12 +500,9 @@ public final class RealStockPriceFeed implements AutoCloseable {
             // Detach those subscriptions once; thereafter only the provider-candle
             // replay controls the market price.
             stockMarket.getSettings().ignorePluginAutosubscribe = true;
-            if (!mapping.pluginsDetached && SERVER_PLUGIN_MANAGER_AVAILABLE()) {
-                var pluginManager = StockMarketModBackend.getServerInstancesPluginManager();
-                if (pluginManager != null) {
-                    pluginManager.removeCache(id);
-                    mapping.pluginsDetached = true;
-                }
+            if (!mapping.pluginsDetached) {
+                manager.detachMarketFromPlugins(id);
+                mapping.pluginsDetached = true;
             }
 
             long rawOpen = toRawPrice(candle.open() * mapping.scale);
