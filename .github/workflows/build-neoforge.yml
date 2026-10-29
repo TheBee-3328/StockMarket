@@ -46,3 +46,26 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew :common:test :neoforge:build --no-daemon
+
+      - name: Prepare distributable NeoForge JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifact
+          mapfile -t jars < <(find neoforge/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*dev-shadow*' ! -name '*sources*' ! -name '*javadoc*' | sort)
+          if [ "${#jars[@]}" -ne 1 ]; then
+            echo "Expected exactly one distributable remapped NeoForge JAR, found ${#jars[@]}:"
+            printf '%s\\n' "${jars[@]}"
+            exit 1
+          fi
+          cp "${jars[0]}" release-artifact/stockmarket-neoforge.jar
+          sha256sum release-artifact/stockmarket-neoforge.jar | tee release-artifact/SHA256SUMS.txt
+          ls -lh release-artifact
+
+      - name: Upload distributable NeoForge JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: stockmarket-neoforge
+          path: release-artifact/*
+          if-no-files-found: error
+          retention-days: 14
