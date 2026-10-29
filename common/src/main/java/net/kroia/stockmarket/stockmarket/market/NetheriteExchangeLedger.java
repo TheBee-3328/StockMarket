@@ -5,12 +5,19 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.util.datafix.DataFixTypes;
 import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.item.ItemStack;
+import net.kroia.modutilities.UtilitiesPlatform;
+import net.kroia.stockmarket.minecraft.item.StockMarketItems;
+
+import java.util.UUID;
 
 /**
  * World-persistent wrapper for per-player USD-exchange netherite accounting.
  * Data is kept in the overworld so it survives dimension changes and restarts.
  */
 public final class NetheriteExchangeLedger extends SavedData {
+    public static final long NETHERITE_USD_VALUE = NetheriteExchangeAccounting.NETHERITE_USD_VALUE;
     private static final String DATA_NAME = "stockmarket_netherite_exchange";
     private final NetheriteExchangeAccounting accounting;
 
@@ -29,6 +36,23 @@ public final class NetheriteExchangeLedger extends SavedData {
                         NetheriteExchangeLedger::load,
                         DataFixTypes.LEVEL),
                 DATA_NAME);
+    }
+
+    /**
+     * Records realized PnL for a completed USD-quoted stock-token trade. Gifts and
+     * creative-granted shares have no tracked cost basis, so selling them gives no
+     * profit credit. Order.getAverageExecutionPrice() already includes buy fees.
+     */
+    public static void recordStockTrade(UUID playerId, ItemStack asset, long signedVolumeRaw,
+                                        long executionPriceRaw, long scaleFactor) {
+        if (playerId == null || asset == null || asset.isEmpty()
+                || !StockMarketItems.isUsdQuotedAsset(asset.getItem())) return;
+        var resourceKey = BuiltInRegistries.ITEM.getKey(asset.getItem());
+        if (resourceKey == null) return;
+        var server = UtilitiesPlatform.getServer();
+        if (server == null) return;
+        get(server).recordTrade(playerId, resourceKey.toString(), signedVolumeRaw,
+                executionPriceRaw, scaleFactor);
     }
 
     public void recordDeposit(java.util.UUID playerId, long unitValueUsd, long itemCount,
