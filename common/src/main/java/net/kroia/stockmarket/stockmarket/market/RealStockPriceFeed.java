@@ -470,7 +470,7 @@ public final class RealStockPriceFeed implements AutoCloseable {
         try {
             Files.createDirectories(configPath.getParent());
             if (!Files.exists(configPath)) {
-                String prettyMappings = DEFAULT_MAPPINGS_JSON.replace("\\n", "\\n  ");
+                String defaultMappings = DEFAULT_MAPPINGS_JSON.strip();
                 String example = """
                         {
                           "enabled": true,
@@ -479,9 +479,9 @@ public final class RealStockPriceFeed implements AutoCloseable {
                           "useDefaultMappings": true,
                           "mappings": %s
                         }
-                        """.formatted(prettyMappings);
+                        """.formatted(defaultMappings);
                 Files.writeString(configPath, example, StandardCharsets.UTF_8);
-                StockMarketMod.LOGGER.info("[RealStockFeed] Created safe empty configuration at {}", configPath);
+                StockMarketMod.LOGGER.info("[RealStockFeed] Created configuration with 18 default market mappings at {}. The feed remains inactive until you add a Finnhub API token.", configPath);
             }
 
             JsonObject root = JsonParser.parseString(Files.readString(configPath, StandardCharsets.UTF_8)).getAsJsonObject();
@@ -493,20 +493,20 @@ public final class RealStockPriceFeed implements AutoCloseable {
             mappings.clear();
             Set<String> mappedItemIds = new HashSet<>();
             Set<String> mappedTickers = new HashSet<>();
-            if (root.has("mappings") && root.get("mappings").isJsonArray()) {
-                JsonArray configuredMappings = root.getAsJsonArray("mappings");
-                boolean useDefaultMappings = !root.has("useDefaultMappings")
-                        || root.get("useDefaultMappings").getAsBoolean();
-                if (configuredMappings.isEmpty() && useDefaultMappings) {
-                    configuredMappings = JsonParser.parseString(DEFAULT_MAPPINGS_JSON).getAsJsonArray();
-                    root.add("mappings", configuredMappings.deepCopy());
-                    root.addProperty("useDefaultMappings", true);
-                    Files.writeString(configPath,
-                            new GsonBuilder().setPrettyPrinting().create().toJson(root) + System.lineSeparator(),
-                            StandardCharsets.UTF_8);
-                    StockMarketMod.LOGGER.info("[RealStockFeed] Added the default 18-market mapping set to {}. Set useDefaultMappings=false to keep mappings empty.", configPath);
-                }
-                configuredMappings.forEach(element -> {
+            JsonArray configuredMappings = root.has("mappings") && root.get("mappings").isJsonArray()
+                    ? root.getAsJsonArray("mappings") : new JsonArray();
+            boolean useDefaultMappings = !root.has("useDefaultMappings")
+                    || root.get("useDefaultMappings").getAsBoolean();
+            if (configuredMappings.isEmpty() && useDefaultMappings) {
+                configuredMappings = JsonParser.parseString(DEFAULT_MAPPINGS_JSON).getAsJsonArray();
+                root.add("mappings", configuredMappings.deepCopy());
+                root.addProperty("useDefaultMappings", true);
+                Files.writeString(configPath,
+                        new GsonBuilder().setPrettyPrinting().create().toJson(root) + System.lineSeparator(),
+                        StandardCharsets.UTF_8);
+                StockMarketMod.LOGGER.info("[RealStockFeed] Added the default 18-market mapping set to {}. Set useDefaultMappings=false to keep mappings empty.", configPath);
+            }
+            configuredMappings.forEach(element -> {
                     if (!element.isJsonObject()) return;
                     JsonObject obj = element.getAsJsonObject();
                     String ticker = obj.has("ticker")
