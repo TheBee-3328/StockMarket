@@ -17,30 +17,46 @@ jobs:
           java-version: "21"
           cache: gradle
 
-      # These builds intentionally use sibling-project flatDir paths in Gradle.
-      # Prepare the sibling checkouts at those exact paths and build their common
-      # JARs before StockMarket resolves its compile-time-only dependencies.
-      - name: Checkout MC_ModUtilities
+      # StockMarket's main branch uses ModUtilities 2.1.3, but the released
+      # BankSystem 2.1.2 dependency itself was built against ModUtilities 2.1.2.
+      # Build those exact released tags locally because the 2.1.2 Maven artifact
+      # is not available from the repositories Gradle normally searches.
+      - name: Checkout MC_ModUtilities 2.1.2
         run: |
           mkdir -p "$GITHUB_WORKSPACE/../../MC_ModUtilities"
-          git clone --depth 1 https://github.com/KROIA/MC_ModUtilities.git "$GITHUB_WORKSPACE/../../MC_ModUtilities/mc_1.21.1_MC_ModUtilities"
+          git clone --depth 1 --branch 1.21.1-2.1.2 https://github.com/KROIA/MC_ModUtilities.git "$GITHUB_WORKSPACE/../../MC_ModUtilities/mc_1.21.1_MC_ModUtilities"
 
-      - name: Build MC_ModUtilities common and NeoForge artifacts
+      - name: Build MC_ModUtilities 2.1.2 artifacts
         working-directory: ../../MC_ModUtilities/mc_1.21.1_MC_ModUtilities
         run: |
           chmod +x gradlew
           ./gradlew :common:build :fabric:build :neoforge:build --no-daemon
 
-      - name: Checkout BankSystem
+      - name: Checkout BankSystem 2.1.2
         run: |
           mkdir -p "$GITHUB_WORKSPACE/../../BankSystem"
-          git clone --depth 1 https://github.com/KROIA/BankSystem.git "$GITHUB_WORKSPACE/../../BankSystem/mc_1.21.1_BankSystem"
+          git clone --depth 1 --branch 1.21.1-2.1.2 https://github.com/KROIA/BankSystem.git "$GITHUB_WORKSPACE/../../BankSystem/mc_1.21.1_BankSystem"
 
-      - name: Build BankSystem common, Fabric and NeoForge artifacts
+      - name: Build BankSystem 2.1.2 artifacts
         working-directory: ../../BankSystem/mc_1.21.1_BankSystem
         run: |
           chmod +x gradlew
           ./gradlew :common:build :fabric:build :neoforge:build --no-daemon
+
+      # BankSystem 2.1.2 is now built against its matching utilities tag. Switch
+      # the utility checkout back to its development head and prepare the 2.1.3
+      # jars StockMarket explicitly compiles against.
+      - name: Update MC_ModUtilities checkout to development head
+        working-directory: ../../MC_ModUtilities/mc_1.21.1_MC_ModUtilities
+        run: |
+          git fetch --depth=1 origin main
+          git checkout --detach FETCH_HEAD
+
+      - name: Build current MC_ModUtilities artifacts for StockMarket
+        working-directory: ../../MC_ModUtilities/mc_1.21.1_MC_ModUtilities
+        run: |
+          chmod +x gradlew
+          ./gradlew clean :common:build :fabric:build :neoforge:build --no-daemon
 
       - name: Run common unit tests and build NeoForge mod
         run: |
