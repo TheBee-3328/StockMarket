@@ -1,5 +1,6 @@
 package net.kroia.stockmarket.stockmarket.marketmanager;
 
+import net.kroia.banksystem.BankSystemModSettings;
 import net.kroia.banksystem.api.bank.BankStatus;
 import net.kroia.banksystem.api.bank.IServerBank;
 import net.kroia.banksystem.api.bankaccount.IServerBankAccount;
@@ -16,6 +17,7 @@ import net.kroia.stockmarket.data.table.record.MarketPriceStruct;
 import net.kroia.stockmarket.data.table.record.OrderRecordStruct;
 import net.kroia.stockmarket.networking.packet.MarketRemovedPacket;
 import net.kroia.stockmarket.stockmarket.market.ServerMarket;
+import net.kroia.stockmarket.stockmarket.market.NetheriteExchangeLedger;
 import net.kroia.stockmarket.stockmarket.market.core.InterMarketExecutor;
 import net.kroia.stockmarket.stockmarket.market.core.order.InterMarketOrder;
 import net.kroia.stockmarket.stockmarket.market.preset.MarketPreset;
@@ -702,11 +704,24 @@ public class ServerMarketManager implements ServerSaveableChunked, IServerMarket
      */
     private void saveInterMarketOrderRecord(InterMarketOrder order)
     {
-        if (order.isBotOrder()) return;
-        if (BACKEND_INSTANCES == null || BACKEND_INSTANCES.ORDER_RECORD_MANAGER == null) return;
+        if (order.isBotOrder() || BACKEND_INSTANCES == null) return;
 
         InterMarketOrder.HistoricalRecordPair records = order.getHistoricalRecord();
 
+        // The pair matcher settles both legs outside the ordinary per-market order
+        // callback, so feed both signed fills into the same per-player cost-basis ledger.
+        // The ledger ignores non-stock-token legs and untracked sells.
+        long scaleFactor = BankSystemModSettings.ITEM_FRACTION_SCALE_FACTOR;
+        NetheriteExchangeLedger.recordStockTrade(
+                order.getOwnerUUID(), order.getBuyOrder().getItemID().getStack(),
+                order.getBuyOrder().getFilledVolume(), order.getBuyOrder().getAverageExecutionPrice(),
+                scaleFactor);
+        NetheriteExchangeLedger.recordStockTrade(
+                order.getOwnerUUID(), order.getSellOrder().getItemID().getStack(),
+                order.getSellOrder().getFilledVolume(), order.getSellOrder().getAverageExecutionPrice(),
+                scaleFactor);
+
+        if (BACKEND_INSTANCES.ORDER_RECORD_MANAGER == null) return;
         // Save buy-leg record if it has fills
         OrderRecordStruct buyRecord = records.buyRecord();
         if (buyRecord != null && buyRecord.amount() != 0)
