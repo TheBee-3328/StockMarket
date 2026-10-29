@@ -494,7 +494,8 @@ public class MatchingEngine
             if (canAffordWant < wantVolume && canAffordWant < wantTargetVolume)
             {
                 long wantWeNeed = Math.min(wantVolume, wantTargetVolume);
-                long dollarsNeeded = wantWeNeed * feeAdjustedPrice - transactionMoneyBalance;
+                long estimatedWantCost = Math.round((double) wantWeNeed * feeAdjustedPrice / SF);
+                long dollarsNeeded = Math.max(0L, estimatedWantCost - transactionMoneyBalance);
                 if (dollarsNeeded < 0) dollarsNeeded = 0;
 
                 long haveToSell = (haveSamplePrice > 0) ? dollarsNeeded / haveSamplePrice : 0;
