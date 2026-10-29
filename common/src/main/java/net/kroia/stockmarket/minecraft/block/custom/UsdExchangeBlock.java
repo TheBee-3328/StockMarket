@@ -1,7 +1,6 @@
 package net.kroia.stockmarket.minecraft.block.custom;
 
 import net.kroia.banksystem.BankSystemModSettings;
-import net.kroia.modutilities.UtilitiesPlatform;
 import net.kroia.stockmarket.minecraft.item.StockMarketItems;
 import net.kroia.stockmarket.stockmarket.market.NetheriteExchangeLedger;
 import net.minecraft.core.BlockPos;
@@ -52,7 +51,7 @@ public final class UsdExchangeBlock extends Block {
         if (stack.isEmpty()) return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
 
         if (stack.is(StockMarketItems.SHARE_USD.get())) {
-            return handleNetheriteWithdrawal(stack, level, player);
+            return handleNetheriteWithdrawal(level, player);
         }
 
         int unitValue = getFixedUsdValue(stack.getItem());
@@ -84,7 +83,7 @@ public final class UsdExchangeBlock extends Block {
         return ItemInteractionResult.CONSUME;
     }
 
-    private ItemInteractionResult handleNetheriteWithdrawal(ItemStack heldStack, Level level, Player player) {
+    private ItemInteractionResult handleNetheriteWithdrawal(Level level, Player player) {
         MinecraftServer server = level.getServer();
         if (server == null) return ItemInteractionResult.CONSUME;
 
@@ -163,7 +162,8 @@ public final class UsdExchangeBlock extends Block {
             int amount = (int) Math.min(template.getMaxStackSize(), remaining);
             ItemStack payout = template.copy();
             payout.setCount(amount);
-            if (!player.getInventory().add(payout) && !payout.isEmpty()) {
+            player.getInventory().add(payout);
+            if (!payout.isEmpty()) {
                 player.drop(payout, false);
             }
             remaining -= amount;
