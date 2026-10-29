@@ -7,6 +7,7 @@ import net.kroia.banksystem.api.bank.IServerBank;
 import net.kroia.banksystem.api.bankaccount.IServerBankAccount;
 import net.kroia.banksystem.util.ItemID;
 import net.kroia.stockmarket.StockMarketModBackend;
+import net.kroia.stockmarket.minecraft.item.StockMarketItems;
 import net.kroia.stockmarket.stockmarket.market.ServerMarket;
 import net.kroia.stockmarket.stockmarket.market.core.order.InterMarketOrder;
 import net.kroia.stockmarket.stockmarket.market.core.order.Order;
@@ -885,11 +886,14 @@ public class MatchingEngine
 
                 // cost = rawVolume * rawPrice / scaleFactor (both inputs are raw-scaled)
                 long cost = Math.round((double)fillPotential * buyOrder.getStartPrice() / BankSystemModSettings.ITEM_FRACTION_SCALE_FACTOR);
-                buyOrder.edit(fillPotential, -cost);
+                long fee = calculateSharePurchaseFee(buyOrder, cost);
+                // The seller receives only trade cost; the buyer pays trade cost + fee.
+                // Recording the fee in transferredMoney also keeps order-cancel refunds correct.
+                buyOrder.edit(fillPotential, -cost - fee);
                 order.edit(-fillPotential, cost);
                 trackPlayerFill(buyOrder, fillPotential);
                 other.itemBank.deposit(fillPotential);
-                other.moneyBank.withdrawLockedPrefered(cost);
+                other.moneyBank.withdrawLockedPrefered(cost + fee);
                 orderVolume += fillPotential;
                 itemDelta   -= fillPotential;
                 moneyDelta  += cost;
@@ -1267,8 +1271,12 @@ public class MatchingEngine
     private void commitBuy(@Nullable IServerBank itemBank, @Nullable IServerBank moneyBank,
                            long itemDelta, long moneyDelta, Order order)
     {
-        if(moneyBank != null)
-            moneyBank.withdrawLockedPrefered(-moneyDelta);  // moneyDelta is negative → withdraw positive
+        if (moneyBank != null) {
+            long grossCost = Math.max(0L, -moneyDelta);
+            long fee = calculateSharePurchaseFee(order, grossCost);
+            moneyBank.withdrawLockedPrefered(grossCost + fee);
+            if (fee > 0) order.edit(0, -fee);
+        }
         if(itemBank != null)
             itemBank.deposit(itemDelta);
         trackPlayerFill(order, itemDelta);
@@ -1279,6 +1287,19 @@ public class MatchingEngine
             if(order.isMarketOrder())
                 orderCanceled(order);
         }
+    }
+
+    /**
+     * A 1% fee applies only to player buy fills for configured financial share tokens.
+     * The caller records it as additional negative transferred money so the reservation
+     * release path accounts for the fee, while the counterparty still receives gross cost.
+     */
+    private long calculateSharePurchaseFee(Order order, long grossCost) {
+        if (grossCost <= 0 || order == null || !order.isPlayerOrder()) return 0L;
+        var stack = itemID.getStack();
+        if (stack == null || stack.isEmpty()
+                || !StockMarketItems.isUsdQuotedAsset(stack.getItem())) return 0L;
+        return (long) Math.ceil(grossCost * 0.01d);
     }
 
     /** Looks up item + money bank for a counterparty order. Returns null if unavailable. */
