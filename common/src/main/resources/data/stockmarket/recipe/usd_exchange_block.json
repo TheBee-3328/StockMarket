@@ -1,0 +1,20 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "I": { "item": "minecraft:iron_ingot" },
+    "G": { "item": "minecraft:gold_ingot" },
+    "D": { "item": "minecraft:diamond" },
+    "E": { "item": "minecraft:emerald" }
+  },
+  "pattern": [
+    "IGI",
+    "DED",
+    "III"
+  ],
+  "result": {
+    "count": 1,
+    "id": "stockmarket:usd_exchange_block"
+  },
+  "show_notification": true
+}
