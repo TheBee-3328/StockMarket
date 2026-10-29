@@ -45,15 +45,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class RealStockPriceFeed implements AutoCloseable {
     private static final long MIN_REFRESH_MS = 60_000L;
-    private static final long MILLIS_PER_DAY = 24L * 60L * 60L * 1000L;
-    // Twelve Data Basic/free tier allows 800 API credits/day and 8 credits/minute.
-    // Each /price symbol quote consumes one credit. Use only 90% for this feed so
-    // failed requests or unrelated use of the same API key have some headroom.
-    private static final long PROVIDER_FREE_TIER_CREDITS_PER_DAY = 800L;
-    private static final long FEED_DAILY_CREDIT_BUDGET = PROVIDER_FREE_TIER_CREDITS_PER_DAY * 9 / 10;
-    private static final long MIN_INTER_SYMBOL_DELAY_MS = 8_500L;
+    // Finnhub's free tier is commonly documented at 60 API calls/minute.
+    // Pace at 55/min to leave headroom for retries and avoid edge-of-window bursts.
+    private static final long MAX_CALLS_PER_MINUTE = 55L;
+    private static final long MIN_INTER_SYMBOL_DELAY_MS = 1_100L;
     private static final long RATE_LIMIT_BACKOFF_MS = 5 * 60_000L;
-    private static final String API_KEY_PLACEHOLDER = "REPLACE_WITH_YOUR_TWELVE_DATA_API_KEY";
+    private static final String API_KEY_PLACEHOLDER = "REPLACE_WITH_YOUR_FINNHUB_API_TOKEN";
 
     private final MinecraftServer server;
     private final ServerMarketManager manager;
@@ -105,18 +102,17 @@ public final class RealStockPriceFeed implements AutoCloseable {
     }
 
     /**
-     * Respect the configured interval while staying under a 720-credit/day feed
-     * budget, leaving 80 credits below the documented 800-credit Basic limit.
-     * For example, five tickers require at least a ten-minute cycle, not one
-     * request per minute.
+     * Respect Finnhub's per-minute request limit. At most 55 requests are budgeted
+     * per minute to leave headroom beneath the commonly documented free-tier cap
+     * of 60 calls/minute. With five tickers and a 60-second configured interval,
+     * quotes can refresh each minute instead of being throttled by a daily quota.
      */
     private long effectiveRefreshIntervalMs() {
         long configured = Math.max(MIN_REFRESH_MS, refreshMs);
         if (mappings.isEmpty()) return configured;
-        long creditsForOneCycle = mappings.size();
-        long dailyBudgetInterval = (creditsForOneCycle * MILLIS_PER_DAY
-                + FEED_DAILY_CREDIT_BUDGET - 1) / FEED_DAILY_CREDIT_BUDGET;
-        return Math.max(configured, dailyBudgetInterval);
+        long requestBudgetInterval = (mappings.size() * 60_000L
+                + MAX_CALLS_PER_MINUTE - 1) / MAX_CALLS_PER_MINUTE;
+        return Math.max(configured, requestBudgetInterval);
     }
 
     private long rateLimitBackoffUntil() {
@@ -196,7 +192,7 @@ public final class RealStockPriceFeed implements AutoCloseable {
         try {
             String symbol = URLEncoder.encode(ticker, StandardCharsets.UTF_8);
             String key = URLEncoder.encode(apiKey, StandardCharsets.UTF_8);
-            URI uri = URI.create("https://api.twelvedata.com/price?symbol=" + symbol + "&apikey=" + key);
+            URI uri = URI.create("https://finnhub.io/api/v1/quote?symbol=" + symbol + "&token=" + key);
             HttpRequest request = HttpRequest.newBuilder(uri)
                     .timeout(Duration.ofSeconds(12))
                     .header("Accept", "application/json")
@@ -221,24 +217,27 @@ public final class RealStockPriceFeed implements AutoCloseable {
                 return FetchResult.failure();
             }
             JsonObject json = parsed.getAsJsonObject();
-            if (json.has("code") || !json.has("price") || (json.has("status")
-                    && "error".equalsIgnoreCase(json.get("status").getAsString()))) {
-                String code = json.has("code") ? json.get("code").getAsString() : "";
-                String message = json.has("message") ? json.get("message").getAsString() : "unexpected response";
-                if (isRateLimitFailure(code, message)) {
-                    recordRateLimit(ticker, "provider error " + code + ": " + message);
+            if (json.has("error") || !json.has("c")) {
+                String message = json.has("error") ? json.get("error").getAsString() : "response has no current-price field";
+                if (isRateLimitFailure("", message)) {
+                    recordRateLimit(ticker, "Finnhub API error: " + message);
                     return FetchResult.rateLimitedResult();
                 }
                 StockMarketMod.LOGGER.warn("[RealStockFeed] No quote for {}: {}", ticker, message);
                 return FetchResult.failure();
             }
 
-            double price = Double.parseDouble(json.get("price").getAsString());
+            // Finnhub's quote response uses c for current price and t for Unix seconds.
+            double price = json.get("c").getAsDouble();
             if (!Double.isFinite(price) || price <= 0) {
-                StockMarketMod.LOGGER.warn("[RealStockFeed] Ignoring invalid price for {}", ticker);
+                StockMarketMod.LOGGER.warn("[RealStockFeed] Finnhub returned no valid current price for {} (market closed or symbol unavailable).", ticker);
                 return FetchResult.failure();
             }
-            return FetchResult.success(new Quote(price, System.currentTimeMillis()));
+            long timestamp = json.has("t") && json.get("t").isJsonPrimitive()
+                    ? json.get("t").getAsLong() * 1000L
+                    : System.currentTimeMillis();
+            if (timestamp <= 0) timestamp = System.currentTimeMillis();
+            return FetchResult.success(new Quote(price, timestamp));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return FetchResult.failure();
@@ -255,11 +254,11 @@ public final class RealStockPriceFeed implements AutoCloseable {
         String normalizedMessage = message == null ? "" : message.toLowerCase(Locale.ROOT);
         return "429".equals(normalizedCode)
                 || normalizedMessage.contains("rate limit")
-                || normalizedMessage.contains("api credits")
-                || normalizedMessage.contains("credit limit")
+                || normalizedMessage.contains("api limit")
+                || normalizedMessage.contains("too many requests")
                 || normalizedMessage.contains("quota")
                 || normalizedMessage.contains("limit exceeded")
-                || normalizedMessage.contains("run out of");
+                || normalizedMessage.contains("maximum number of requests");
     }
 
     private void recordRateLimit(String ticker, String reason) {
@@ -338,7 +337,7 @@ public final class RealStockPriceFeed implements AutoCloseable {
                 String example = """
                         {
                           "enabled": true,
-                          "apiKey": "REPLACE_WITH_YOUR_TWELVE_DATA_API_KEY",
+                          "apiKey": "REPLACE_WITH_YOUR_FINNHUB_API_TOKEN",
                           "refreshSeconds": 60,
                           "mappings": []
                         }
@@ -390,14 +389,15 @@ public final class RealStockPriceFeed implements AutoCloseable {
                 });
             }
             if (enabled && !mappings.isEmpty() && !hasUsableApiKey()) {
-                StockMarketMod.LOGGER.warn("[RealStockFeed] Add a valid Twelve Data API key to enable configured tickers.");
+                StockMarketMod.LOGGER.warn("[RealStockFeed] Add a valid Finnhub API token to enable configured tickers.");
             }
             if (enabled && mappings.size() > 0) {
                 long effective = effectiveRefreshIntervalMs();
                 if (effective > Math.max(MIN_REFRESH_MS, refreshMs)) {
-                    StockMarketMod.LOGGER.info("[RealStockFeed] Using {}-second refresh interval to stay within the free-tier daily credit budget.",
+                    StockMarketMod.LOGGER.info("[RealStockFeed] Using {}-second refresh interval to remain under the conservative per-minute request budget.",
                             effective / 1000L);
                 }
+                StockMarketMod.LOGGER.warn("[RealStockFeed] Finnhub's personal-use terms prohibit redistributing market data or derived results without written approval. Obtain written approval before displaying quotes to other players.");
             }
         } catch (IOException | RuntimeException e) {
             enabled = false;
