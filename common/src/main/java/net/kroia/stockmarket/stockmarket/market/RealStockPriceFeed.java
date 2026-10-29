@@ -124,7 +124,12 @@ public final class RealStockPriceFeed implements AutoCloseable {
 
     private boolean hasUsableApiKey() {
         String key = apiKey;
-        return key != null && !key.isBlank() && !API_KEY_PLACEHOLDER.equals(key);
+        if (key == null || key.isBlank()) return false;
+        String normalized = key.toUpperCase(Locale.ROOT);
+        // Treat both the current and older generated placeholder spellings as inert.
+        return !API_KEY_PLACEHOLDER.equals(key)
+                && !normalized.contains("YOUR_TWELVE_DATA_API_KEY")
+                && !normalized.startsWith("REPLACE_WITH");
     }
 
     private void refreshNow() {
@@ -255,8 +260,10 @@ public final class RealStockPriceFeed implements AutoCloseable {
 
     private void recordRateLimit(String ticker, String reason) {
         lastRateLimitAt = System.currentTimeMillis();
-        nextRefreshAt = lastRateLimitAt + RATE_LIMIT_BACKOFF_MS;
-        StockMarketMod.LOGGER.warn("[RealStockFeed] Rate limit for {} ({}); stopping this batch and backing off for five minutes.",
+        // Keep the normal/quota-derived refresh interval if it is longer than the
+        // transient rate-limit backoff; never accelerate the next batch after a 429.
+        nextRefreshAt = Math.max(nextRefreshAt, lastRateLimitAt + RATE_LIMIT_BACKOFF_MS);
+        StockMarketMod.LOGGER.warn("[RealStockFeed] Rate limit for {} ({}); stopping this batch and backing off before the next refresh.",
                 ticker, reason);
     }
 
@@ -344,6 +351,7 @@ public final class RealStockPriceFeed implements AutoCloseable {
 
             mappings.clear();
             Set<String> mappedItemIds = new HashSet<>();
+            Set<String> mappedTickers = new HashSet<>();
             if (root.has("mappings") && root.get("mappings").isJsonArray()) {
                 root.getAsJsonArray("mappings").forEach(element -> {
                     if (!element.isJsonObject()) return;
@@ -364,11 +372,16 @@ public final class RealStockPriceFeed implements AutoCloseable {
                         StockMarketMod.LOGGER.warn("[RealStockFeed] Skipping {}: vanilla item mappings are unsafe; configure a dedicated share-token item from another namespace.", ticker);
                         return;
                     }
+                    if (mappedTickers.contains(ticker)) {
+                        StockMarketMod.LOGGER.warn("[RealStockFeed] Skipping duplicate ticker mapping for {}.", ticker);
+                        return;
+                    }
                     if (!mappedItemIds.add(itemId)) {
                         StockMarketMod.LOGGER.warn("[RealStockFeed] Skipping {}: item {} is already mapped to another ticker.",
                                 ticker, itemId);
                         return;
                     }
+                    mappedTickers.add(ticker);
                     mappings.add(new Mapping(ticker, itemId, scale));
                 });
             }
