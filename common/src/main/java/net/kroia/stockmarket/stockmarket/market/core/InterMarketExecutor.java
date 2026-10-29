@@ -5,6 +5,7 @@ import net.kroia.banksystem.api.bank.IServerBank;
 import net.kroia.banksystem.api.bankaccount.IServerBankAccount;
 import net.kroia.banksystem.util.ItemID;
 import net.kroia.stockmarket.StockMarketMod;
+import net.kroia.stockmarket.minecraft.item.StockMarketItems;
 import net.kroia.stockmarket.stockmarket.market.ServerMarket;
 import net.kroia.stockmarket.stockmarket.market.core.order.InterMarketOrder;
 import net.kroia.stockmarket.stockmarket.market.core.order.Order;
@@ -190,9 +191,12 @@ public class InterMarketExecutor
             return ExecutionResult.CANCELED;
         }
 
-        // Step B — Buy simulation: use the dollar yield to buy from wantMarket
+        // Step B — Buy simulation: preserve enough sale proceeds for the 1% fee
+        // when this player is buying a configured financial share.
+        boolean sharePurchase = isPlayerSharePurchase(order, wantMarket);
+        long simulatedBuyBudget = budgetAfterSharePurchaseFee(simSell.dollarAmount(), sharePurchase);
         DepthSimulation.SimResult simBuy = DepthSimulation.simulateBuy(
-                wantOrderbook, simSell.dollarAmount(), wantPrice);
+                wantOrderbook, simulatedBuyBudget, wantPrice);
 
         if (simBuy.volumeFilled() <= 0 || simBuy.dollarAmount() <= 0)
         {
@@ -216,8 +220,13 @@ public class InterMarketExecutor
         else
         {
             // Buy-direction: back-calculate the minimum sell to fund the buy target
+            long requiredProceeds = simBuy.dollarAmount();
+            if (sharePurchase) {
+                requiredProceeds = Math.addExact(requiredProceeds,
+                        (long) Math.ceil(requiredProceeds * 0.01d));
+            }
             DepthSimulation.SimResult simSellExact = DepthSimulation.simulateSellForDollars(
-                    haveOrderbook, simBuy.dollarAmount(), havePrice);
+                    haveOrderbook, requiredProceeds, havePrice);
 
             if (simSellExact.volumeFilled() <= 0)
             {
@@ -257,6 +266,20 @@ public class InterMarketExecutor
                 order, haveMarket, wantMarket, playerBankAccount, tradingCurrencyID);
     }
 
+
+    private static boolean isPlayerSharePurchase(InterMarketOrder order, ServerMarket wantMarket) {
+        if (order == null || wantMarket == null || order.isBotOrder()) return false;
+        var stack = wantMarket.getItemID().getStack();
+        return stack != null && !stack.isEmpty()
+                && StockMarketItems.isUsdQuotedAsset(stack.getItem());
+    }
+
+    /** Leaves a full 1% of proceeds available for the matching engine's buy fee. */
+    private static long budgetAfterSharePurchaseFee(long proceeds, boolean sharePurchase) {
+        if (proceeds <= 0 || !sharePurchase) return Math.max(0L, proceeds);
+        long feeReserve = (long) Math.ceil(proceeds * 0.01d);
+        return Math.max(0L, proceeds - feeReserve);
+    }
 
     // ═══════════════════════════════════════════════════════════════════════════
     //  Shared two-leg execution
@@ -354,8 +377,10 @@ public class InterMarketExecutor
         // spends more than the sell leg earned. Without this, the original target
         // volume could cause the matching engine to dip into the player's existing
         // money balance.
+        boolean sharePurchase = isPlayerSharePurchase(order, wantMarket);
+        long buyBudgetAfterFee = budgetAfterSharePurchaseFee(actualDollarYield, sharePurchase);
         DepthSimulation.SimResult reBuy = DepthSimulation.simulateBuy(
-                wantMarket.getOrderbook(), actualDollarYield, wantMarket.getCurrentMarketPrice());
+                wantMarket.getOrderbook(), buyBudgetAfterFee, wantMarket.getCurrentMarketPrice());
 
         if (reBuy.volumeFilled() <= 0 || reBuy.dollarAmount() <= 0)
         {

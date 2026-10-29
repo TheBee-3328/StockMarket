@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": { "model": "stockmarket:block/usd_exchange_block" }
+  }
+}

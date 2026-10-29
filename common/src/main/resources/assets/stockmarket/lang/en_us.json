@@ -2,6 +2,8 @@
   "block.stockmarket.stock_market_block": "Stock Market Terminal Block",
   "item.stockmarket.stock_market_block": "Stock Market Block",
   "block.stockmarket.stockmarket_display_block": "Stock Market Display",
+  "block.stockmarket.usd_exchange_block": "USD Commodity Exchange",
+  "item.stockmarket.usd_exchange_block": "USD Commodity Exchange",
   "item.stockmarket.stockmarket_display_block": "Stock Market Display",
   "item.stockmarket.trading_software": "Trading Software",
   "item.stockmarket.newspaper": "Newspaper",

@@ -15,6 +15,7 @@ import net.kroia.stockmarket.api.market.IServerMarket;
 import net.kroia.stockmarket.networking.NetworkGate;
 import net.kroia.stockmarket.stockmarket.market.ServerMarket;
 import net.kroia.stockmarket.stockmarket.market.core.order.Order;
+import net.kroia.stockmarket.minecraft.item.StockMarketItems;
 import net.kroia.stockmarket.util.MultiServerUtils;
 import net.kroia.stockmarket.util.StockMarketGenericRequest;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -276,6 +277,20 @@ public class CreateOrderRequest extends StockMarketGenericRequest<CreateOrderReq
             }
         }
 
+        // Reserve a 1% fee budget only for buying the configured financial tokens.
+        // The fee itself is deducted by MatchingEngine on filled volume, not on order
+        // placement; any unfilled/cancelled portion of this extra reservation is refunded.
+        if (input.volume > 0 && isSharePurchaseAsset(input.itemID)) {
+            long baseReservation = toLockAmount;
+            long feeReservation = (long) Math.ceil(baseReservation * 0.01d);
+            toLockAmount = Math.addExact(baseReservation, feeReservation);
+            if (moneyBank.getBalance() < toLockAmount) {
+                response.status = Status.NOT_ENOUGH_MONEY;
+                future.complete(response);
+                return future;
+            }
+        }
+
         // Reserve balances
         if(input.volume > 0)
         {
@@ -349,6 +364,13 @@ public class CreateOrderRequest extends StockMarketGenericRequest<CreateOrderReq
         response.orderEcho = order;
         future.complete(response);
         return future;
+    }
+
+    private boolean isSharePurchaseAsset(ItemID itemID) {
+        if (itemID == null) return false;
+        var stack = itemID.getStack();
+        return stack != null && !stack.isEmpty()
+                && StockMarketItems.isUsdQuotedAsset(stack.getItem());
     }
 
     private long toRawAmount(double realAmount)

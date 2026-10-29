@@ -34,21 +34,21 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Optional Finnhub quote importer for the master server.
+ * Optional Finnhub OHLC candle importer for the master server.
  *
  * <p>Each ticker must be explicitly mapped to a dedicated share-token item in
  * real-stocks.json. Existing markets without a persisted matching feed-owner
  * marker are never adopted. All network I/O runs on a daemon worker and market
  * mutations are marshalled to the Minecraft server thread.
  *
- * <p>Quotes are reference/anchor prices, not a replacement order engine: player
- * limit orders stay at their configured prices and fills can move the market
- * between refreshes. A fresh external quote re-anchors the market price; the
- * normal market update then moves the virtual-liquidity window, preserving
- * overlapping levels and only filling newly exposed levels via normal policy.
+ * <p>Only completed one-minute provider candles are used. Each candle is replayed
+ * one interval late, simulating the intrabar path between its real open and close
+ * while retaining its real high/low bounds. Player orders still execute, but their
+ * fills cannot displace the authoritative external price.
  */
 public final class RealStockPriceFeed implements AutoCloseable {
     private static final long MIN_REFRESH_MS = 60_000L;
+    private static final long CANDLE_DURATION_MS = 60_000L;
     // Finnhub's free tier is commonly documented at 60 API calls/minute.
     // Pace at 55/min to leave headroom for retries and avoid edge-of-window bursts.
     private static final long MAX_CALLS_PER_MINUTE = 55L;
@@ -178,6 +178,7 @@ public final class RealStockPriceFeed implements AutoCloseable {
     private volatile long lastRateLimitAt;
     private volatile ItemID usdAnchorItemID;
     private boolean warnedUsdOwnershipConflict;
+    private boolean usdPluginsDetached = false;
 
     private RealStockPriceFeed(MinecraftServer server, ServerMarketManager manager, Path configPath) {
         this(server, manager, configPath, null);
@@ -312,20 +313,20 @@ public final class RealStockPriceFeed implements AutoCloseable {
             if (System.currentTimeMillis() < rateLimitBackoffUntil()) return;
 
             Mapping mapping = mappings.get(i);
-            FetchResult result = fetchQuote(mapping.ticker);
+            FetchResult result = fetchCandle(mapping.ticker);
             if (result.rateLimited()) {
                 // Stop the batch immediately. Do not hit the next symbol.
                 nextRefreshAt = rateLimitBackoffUntil();
                 return;
             }
             if (closed.get()) return;
-            if (result.quote() != null) {
-                Quote quote = result.quote();
+            if (result.candle() != null) {
+                Candle candle = result.candle();
                 try {
                     // The worker only obtains data. All game state is read/written
                     // from this task on the server thread, and stale tasks no-op.
                     server.execute(() -> {
-                        if (!closed.get()) applyQuote(mapping, quote);
+                        if (!closed.get()) applyCandle(mapping, candle);
                     });
                 } catch (RejectedExecutionException e) {
                     if (!closed.get()) {
@@ -338,11 +339,14 @@ public final class RealStockPriceFeed implements AutoCloseable {
         }
     }
 
-    FetchResult fetchQuote(String ticker) {
+    FetchResult fetchCandle(String ticker) {
         try {
             String symbol = URLEncoder.encode(ticker, StandardCharsets.UTF_8);
             String key = URLEncoder.encode(apiKey, StandardCharsets.UTF_8);
-            URI uri = URI.create("https://finnhub.io/api/v1/quote?symbol=" + symbol + "&token=" + key);
+            long nowSeconds = System.currentTimeMillis() / 1000L;
+            long fromSeconds = nowSeconds - 5 * 60L;
+            URI uri = URI.create("https://finnhub.io/api/v1/stock/candle?symbol=" + symbol
+                    + "&resolution=1&from=" + fromSeconds + "&to=" + nowSeconds + "&token=" + key);
             HttpRequest request = HttpRequest.newBuilder(uri)
                     .timeout(Duration.ofSeconds(12))
                     .header("Accept", "application/json")
@@ -361,37 +365,70 @@ public final class RealStockPriceFeed implements AutoCloseable {
 
             var parsed = JsonParser.parseString(response.body());
             if (!parsed.isJsonObject()) {
-                StockMarketMod.LOGGER.warn("[RealStockFeed] Invalid quote response for {}", ticker);
+                StockMarketMod.LOGGER.warn("[RealStockFeed] Invalid candle response for {}", ticker);
                 return FetchResult.failure();
             }
             JsonObject json = parsed.getAsJsonObject();
-            if (json.has("error") || !json.has("c")) {
-                String message = json.has("error") ? json.get("error").getAsString() : "response has no current-price field";
+            if (json.has("error")) {
+                String message = json.get("error").getAsString();
                 if (isRateLimitFailure("", message)) {
                     recordRateLimit(ticker, "Finnhub API error: " + message);
                     return FetchResult.rateLimitedResult();
                 }
-                StockMarketMod.LOGGER.warn("[RealStockFeed] No quote for {}: {}", ticker, message);
+                StockMarketMod.LOGGER.warn("[RealStockFeed] No candle data for {}: {}", ticker, message);
+                return FetchResult.failure();
+            }
+            String status = json.has("s") ? json.get("s").getAsString() : "";
+            if (!"ok".equalsIgnoreCase(status)
+                    || !json.has("t") || !json.has("o") || !json.has("h")
+                    || !json.has("l") || !json.has("c")) {
+                StockMarketMod.LOGGER.debug("[RealStockFeed] No completed candle payload for {} (status {}).",
+                        ticker, status);
                 return FetchResult.failure();
             }
 
-            // Finnhub's quote response uses c for current price and t for Unix seconds.
-            double price = json.get("c").getAsDouble();
-            if (!Double.isFinite(price) || price <= 0) {
-                StockMarketMod.LOGGER.warn("[RealStockFeed] Finnhub returned no valid current price for {} (market closed or symbol unavailable).", ticker);
+            JsonArray timestamps = json.getAsJsonArray("t");
+            JsonArray opens = json.getAsJsonArray("o");
+            JsonArray highs = json.getAsJsonArray("h");
+            JsonArray lows = json.getAsJsonArray("l");
+            JsonArray closes = json.getAsJsonArray("c");
+            int size = Math.min(timestamps.size(),
+                    Math.min(opens.size(), Math.min(highs.size(), Math.min(lows.size(), closes.size()))));
+
+            Candle newestCompleted = null;
+            for (int i = 0; i < size; i++) {
+                long candleStartSeconds = timestamps.get(i).getAsLong();
+                // Finnhub also returns the currently forming minute. Never use it:
+                // it is not a stable target and would move the target during replay.
+                if (candleStartSeconds <= 0 || candleStartSeconds + 60L > nowSeconds) continue;
+
+                double open = opens.get(i).getAsDouble();
+                double high = highs.get(i).getAsDouble();
+                double low = lows.get(i).getAsDouble();
+                double close = closes.get(i).getAsDouble();
+                if (!Double.isFinite(open) || !Double.isFinite(high)
+                        || !Double.isFinite(low) || !Double.isFinite(close)
+                        || open <= 0 || high <= 0 || low <= 0 || close <= 0
+                        || high < Math.max(open, close) || low > Math.min(open, close)) {
+                    continue;
+                }
+
+                Candle candidate = new Candle(open, high, low, close, candleStartSeconds * 1000L);
+                if (newestCompleted == null || candidate.timestampMs() > newestCompleted.timestampMs()) {
+                    newestCompleted = candidate;
+                }
+            }
+            if (newestCompleted == null) {
+                StockMarketMod.LOGGER.debug("[RealStockFeed] No completed one-minute candle available for {}.", ticker);
                 return FetchResult.failure();
             }
-            long timestamp = json.has("t") && json.get("t").isJsonPrimitive()
-                    ? json.get("t").getAsLong() * 1000L
-                    : System.currentTimeMillis();
-            if (timestamp <= 0) timestamp = System.currentTimeMillis();
-            return FetchResult.success(new Quote(price, timestamp));
+            return FetchResult.success(newestCompleted);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return FetchResult.failure();
         } catch (Exception e) {
             if (!closed.get()) {
-                StockMarketMod.LOGGER.warn("[RealStockFeed] Could not fetch {}: {}", ticker, e.getMessage());
+                StockMarketMod.LOGGER.warn("[RealStockFeed] Could not fetch candle for {}: {}", ticker, e.getMessage());
             }
             return FetchResult.failure();
         }
@@ -418,8 +455,8 @@ public final class RealStockPriceFeed implements AutoCloseable {
                 ticker, reason);
     }
 
-    private void applyQuote(Mapping mapping, Quote quote) {
-        if (closed.get()) return;
+    private void applyCandle(Mapping mapping, Candle candle) {
+        if (closed.get() || candle.timestampMs() <= mapping.lastUpdated) return;
         try {
             ItemStack stack = resolveItemStack(mapping.itemId);
             if (stack.isEmpty()) {
@@ -450,22 +487,48 @@ public final class RealStockPriceFeed implements AutoCloseable {
                 }
                 stockMarket = candidate;
             } else {
-                var created = manager.createMarket(id);
+                // External prices own this market's movement. Create it with the
+                // plugin-auto-subscribe opt-out set BEFORE the manager's subscribe pass.
+                var created = manager.createMarketWithConfig(id,
+                        new MarketConfig(true, (float) (candle.open() * mapping.scale), 10f, true));
                 if (!(created instanceof ServerMarket candidate)) return;
                 if (!candidate.claimExternalPriceFeedOwnership(mapping.ticker)) return;
                 stockMarket = candidate;
+                mapping.pluginsDetached = true; // no plugins were subscribed on creation
             }
 
-            long raw = Math.max(1L, MarketManager.convertToRawAmountStatic(quote.price * mapping.scale));
-            if (stockMarket.setExternalReferencePrice(mapping.ticker, raw)) {
-                mapping.lastPrice = quote.price;
-                mapping.lastUpdated = quote.timestamp;
+            // A legacy feed-owned market might already have plugin-driven volatility.
+            // Detach those subscriptions once; thereafter only the provider-candle
+            // replay controls the market price.
+            stockMarket.getSettings().ignorePluginAutosubscribe = true;
+            if (!mapping.pluginsDetached) {
+                manager.detachMarketFromPlugins(id);
+                mapping.pluginsDetached = true;
+            }
+
+            long rawOpen = toRawPrice(candle.open() * mapping.scale);
+            long rawHigh = toRawPrice(candle.high() * mapping.scale);
+            long rawLow = toRawPrice(candle.low() * mapping.scale);
+            long rawClose = toRawPrice(candle.close() * mapping.scale);
+            rawHigh = Math.max(rawHigh, Math.max(rawOpen, rawClose));
+            rawLow = Math.min(rawLow, Math.min(rawOpen, rawClose));
+
+            if (stockMarket.setExternalCandle(mapping.ticker, rawOpen, rawHigh, rawLow,
+                    rawClose, candle.timestampMs(), CANDLE_DURATION_MS)) {
+                mapping.lastPrice = candle.close();
+                mapping.lastUpdated = candle.timestampMs();
             }
         } catch (Exception e) {
             if (!closed.get()) {
-                StockMarketMod.LOGGER.warn("[RealStockFeed] Failed applying {}: {}", mapping.ticker, e.getMessage());
+                StockMarketMod.LOGGER.warn("[RealStockFeed] Failed applying candle for {}: {}",
+                        mapping.ticker, e.getMessage());
             }
         }
+    }
+
+    private static long toRawPrice(double price) {
+        if (!Double.isFinite(price) || price <= 0) return 1L;
+        return Math.max(1L, MarketManager.convertToRawAmountStatic(price));
     }
 
     /**
@@ -519,6 +582,11 @@ public final class RealStockPriceFeed implements AutoCloseable {
                 return;
             }
 
+            usdMarket.getSettings().ignorePluginAutosubscribe = true;
+            if (!usdPluginsDetached) {
+                manager.detachMarketFromPlugins(itemID);
+                usdPluginsDetached = true;
+            }
             long rawOneUsd = Math.max(1L, MarketManager.convertToRawAmountStatic(1.0));
             usdMarket.setExternalReferencePrice("USD", rawOneUsd);
         } catch (Exception e) {
@@ -644,6 +712,7 @@ public final class RealStockPriceFeed implements AutoCloseable {
         boolean warnedExistingMarket;
         volatile double lastPrice;
         volatile long lastUpdated;
+        boolean pluginsDetached;
 
         Mapping(String ticker, String itemId, double scale) {
             this.ticker = ticker;
@@ -652,11 +721,11 @@ public final class RealStockPriceFeed implements AutoCloseable {
         }
     }
 
-    record Quote(double price, long timestamp) {}
+    record Candle(double open, double high, double low, double close, long timestampMs) {}
 
-    record FetchResult(Quote quote, boolean rateLimited) {
-        static FetchResult success(Quote quote) {
-            return new FetchResult(quote, false);
+    record FetchResult(Candle candle, boolean rateLimited) {
+        static FetchResult success(Candle candle) {
+            return new FetchResult(candle, false);
         }
         static FetchResult failure() {
             return new FetchResult(null, false);
