@@ -42,7 +42,7 @@ jobs:
           chmod +x gradlew
           ./gradlew :common:build :fabric:build :neoforge:build --no-daemon
 
-      - name: Build NeoForge mod
+      - name: Run common unit tests and build NeoForge mod
         run: |
           chmod +x gradlew
-          ./gradlew :neoforge:build --no-daemon
+          ./gradlew :common:test :neoforge:build --no-daemon

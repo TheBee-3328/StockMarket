@@ -55,9 +55,8 @@ public final class RealStockPriceFeed implements AutoCloseable {
     private final MinecraftServer server;
     private final ServerMarketManager manager;
     private final Path configPath;
-    private final HttpClient http = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .build();
+    private final HttpClient http;
+    private final QuoteHttpTransport httpTransport;
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "StockMarket-RealStockFeed");
         t.setDaemon(true);
@@ -74,11 +73,38 @@ public final class RealStockPriceFeed implements AutoCloseable {
     private volatile long lastRateLimitAt;
 
     private RealStockPriceFeed(MinecraftServer server, ServerMarketManager manager, Path configPath) {
+        this(server, manager, configPath, null);
+    }
+
+    /**
+     * Injectable transport constructor for deterministic feed tests. Production callers
+     * use the default HTTPS transport; tests can provide canned HTTP responses without
+     * reaching Finnhub.
+     */
+    RealStockPriceFeed(MinecraftServer server, ServerMarketManager manager, Path configPath,
+                       QuoteHttpTransport testTransport) {
         this.server = server;
         this.manager = manager;
         this.configPath = configPath;
+        this.http = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .build();
+        this.httpTransport = testTransport != null ? testTransport : this::sendHttpRequest;
         loadConfig();
     }
+
+    private HttpResponseData sendHttpRequest(HttpRequest request) throws IOException, InterruptedException {
+        HttpResponse<String> response = http.send(request,
+                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        return new HttpResponseData(response.statusCode(), response.body());
+    }
+
+    @FunctionalInterface
+    interface QuoteHttpTransport {
+        HttpResponseData send(HttpRequest request) throws Exception;
+    }
+
+    record HttpResponseData(int statusCode, String body) {}
 
     public static RealStockPriceFeed start(MinecraftServer server, ServerMarketManager manager, Path configPath) {
         RealStockPriceFeed feed = new RealStockPriceFeed(server, manager, configPath);
@@ -138,38 +164,7 @@ public final class RealStockPriceFeed implements AutoCloseable {
         try {
             worker.submit(() -> {
                 try {
-                    long backoffUntil = rateLimitBackoffUntil();
-                    if (closed.get() || System.currentTimeMillis() < backoffUntil) return;
-
-                    for (int i = 0; i < mappings.size(); i++) {
-                        if (closed.get() || Thread.currentThread().isInterrupted()) return;
-                        if (System.currentTimeMillis() < rateLimitBackoffUntil()) return;
-
-                        Mapping mapping = mappings.get(i);
-                        FetchResult result = fetchQuote(mapping.ticker);
-                        if (result.rateLimited()) {
-                            // Stop the batch immediately. Do not hit the next symbol.
-                            nextRefreshAt = rateLimitBackoffUntil();
-                            return;
-                        }
-                        if (closed.get()) return;
-                        if (result.quote() != null) {
-                            Quote quote = result.quote();
-                            try {
-                                // The worker only obtains data. All game state is read/written
-                                // from this task on the server thread, and stale tasks no-op.
-                                server.execute(() -> {
-                                    if (!closed.get()) applyQuote(mapping, quote);
-                                });
-                            } catch (RejectedExecutionException e) {
-                                if (!closed.get()) {
-                                    StockMarketMod.LOGGER.warn("[RealStockFeed] Server stopped before quote could be applied.");
-                                }
-                                return;
-                            }
-                        }
-                        if (i + 1 < mappings.size()) Thread.sleep(MIN_INTER_SYMBOL_DELAY_MS);
-                    }
+                    performRefreshBatch();
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 } catch (Exception e) {
@@ -188,7 +183,47 @@ public final class RealStockPriceFeed implements AutoCloseable {
         }
     }
 
-    private FetchResult fetchQuote(String ticker) {
+    /**
+     * Processes one sequential request batch. Package-private so tests can execute
+     * the same production loop synchronously with a fake HTTP transport.
+     */
+    void performRefreshBatch() throws InterruptedException {
+        if (closed.get() || !enabled || mappings.isEmpty() || !hasUsableApiKey()) return;
+        long backoffUntil = rateLimitBackoffUntil();
+        if (System.currentTimeMillis() < backoffUntil) return;
+
+        for (int i = 0; i < mappings.size(); i++) {
+            if (closed.get() || Thread.currentThread().isInterrupted()) return;
+            if (System.currentTimeMillis() < rateLimitBackoffUntil()) return;
+
+            Mapping mapping = mappings.get(i);
+            FetchResult result = fetchQuote(mapping.ticker);
+            if (result.rateLimited()) {
+                // Stop the batch immediately. Do not hit the next symbol.
+                nextRefreshAt = rateLimitBackoffUntil();
+                return;
+            }
+            if (closed.get()) return;
+            if (result.quote() != null) {
+                Quote quote = result.quote();
+                try {
+                    // The worker only obtains data. All game state is read/written
+                    // from this task on the server thread, and stale tasks no-op.
+                    server.execute(() -> {
+                        if (!closed.get()) applyQuote(mapping, quote);
+                    });
+                } catch (RejectedExecutionException e) {
+                    if (!closed.get()) {
+                        StockMarketMod.LOGGER.warn("[RealStockFeed] Server stopped before quote could be applied.");
+                    }
+                    return;
+                }
+            }
+            if (i + 1 < mappings.size()) Thread.sleep(MIN_INTER_SYMBOL_DELAY_MS);
+        }
+    }
+
+    FetchResult fetchQuote(String ticker) {
         try {
             String symbol = URLEncoder.encode(ticker, StandardCharsets.UTF_8);
             String key = URLEncoder.encode(apiKey, StandardCharsets.UTF_8);
@@ -198,9 +233,7 @@ public final class RealStockPriceFeed implements AutoCloseable {
                     .header("Accept", "application/json")
                     .GET()
                     .build();
-            HttpResponse<String> response = http.send(request,
-                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-
+            HttpResponseData response = httpTransport.send(request);
             if (response.statusCode() == 429) {
                 recordRateLimit(ticker, "HTTP 429");
                 return FetchResult.rateLimitedResult();
@@ -431,9 +464,9 @@ public final class RealStockPriceFeed implements AutoCloseable {
         }
     }
 
-    private record Quote(double price, long timestamp) {}
+    record Quote(double price, long timestamp) {}
 
-    private record FetchResult(Quote quote, boolean rateLimited) {
+    record FetchResult(Quote quote, boolean rateLimited) {
         static FetchResult success(Quote quote) {
             return new FetchResult(quote, false);
         }
