@@ -438,6 +438,10 @@ public class MatchingEngine
         long haveLockedVolume     = Math.abs(order.getSellOrder().getRemainingVolume()); // positive, items still available to sell
         long crossMarketLimitPrice = order.getCrossRateLimit();
         long transactionMoneyBalance = order.getTransactionMoneyBalance();
+        // Cross-market limit orders bypass commitBuy(), so apply the same buy-only
+        // share fee here and reserve enough of the internal proceeds buffer for it.
+        boolean chargeSharePurchaseFee = !order.isBotOrder()
+                && isFinancialShareItem(order.getBuyItemID());
 
         // Track whether any progress was made this tick
         boolean madeProgress = false;
@@ -481,12 +485,16 @@ public class MatchingEngine
             }
 
             // 4. Sell have-items if needed to fund want-item purchase
-            long canAffordWant = (wantSamplePrice > 0) ? affordableVolume(transactionMoneyBalance, wantSamplePrice) : 0;
+            long feeAdjustedPrice = chargeSharePurchaseFee
+                    ? Math.max(wantSamplePrice, (long) Math.ceil(wantSamplePrice * 1.01d))
+                    : wantSamplePrice;
+            long canAffordWant = (wantSamplePrice > 0)
+                    ? affordableVolume(transactionMoneyBalance, feeAdjustedPrice) : 0;
 
             if (canAffordWant < wantVolume && canAffordWant < wantTargetVolume)
             {
                 long wantWeNeed = Math.min(wantVolume, wantTargetVolume);
-                long dollarsNeeded = wantWeNeed * wantSamplePrice - transactionMoneyBalance;
+                long dollarsNeeded = wantWeNeed * feeAdjustedPrice - transactionMoneyBalance;
                 if (dollarsNeeded < 0) dollarsNeeded = 0;
 
                 long haveToSell = (haveSamplePrice > 0) ? dollarsNeeded / haveSamplePrice : 0;
@@ -535,16 +543,26 @@ public class MatchingEngine
             long wantToBuy = Math.min(wantVolume, wantTargetVolume);
             if (wantSamplePrice > 0)
             {
-                long canBuy = affordableVolume(transactionMoneyBalance, wantSamplePrice);
+                long effectivePrice = chargeSharePurchaseFee
+                        ? Math.max(wantSamplePrice, (long) Math.ceil(wantSamplePrice * 1.01d))
+                        : wantSamplePrice;
+                long canBuy = affordableVolume(transactionMoneyBalance, effectivePrice);
                 wantToBuy = Math.min(wantToBuy, canBuy);
             }
 
             if (wantToBuy > 0)
             {
+                // Keep 1% of player proceeds aside for the fee, then cap the actual
+                // gross fill to that reduced budget so the internal balance cannot go negative.
+                long grossBudget = chargeSharePurchaseFee
+                        ? transactionMoneyBalance * 100L / 101L
+                        : transactionMoneyBalance;
                 DepthConsumeResult consumed = consumeSellSideDepthAtPrice(
-                        wantMarket, wantSamplePrice, wantToBuy, transactionMoneyBalance);
+                        wantMarket, wantSamplePrice, wantToBuy, grossBudget);
+                long fee = calculateSharePurchaseFee(order.getBuyItemID(),
+                        chargeSharePurchaseFee, consumed.dollarAmount());
 
-                transactionMoneyBalance -= consumed.dollarAmount();
+                transactionMoneyBalance -= consumed.dollarAmount() + fee;
                 wantTargetVolume -= consumed.volumeConsumed();
                 wantVolume -= consumed.volumeConsumed();
 
@@ -557,7 +575,7 @@ public class MatchingEngine
 
                 if (consumed.volumeConsumed() > 0)
                 {
-                    order.getBuyOrder().edit(consumed.volumeConsumed(), -consumed.dollarAmount());
+                    order.getBuyOrder().edit(consumed.volumeConsumed(), -consumed.dollarAmount() - fee);
                     // Flow (taker side, want-market): the player RECEIVED volumeConsumed()
                     // items, so the signed fill is POSITIVE → demand. Same reasoning as the
                     // have-market credit above (no update() on this path; resting
@@ -1295,10 +1313,19 @@ public class MatchingEngine
      * release path accounts for the fee, while the counterparty still receives gross cost.
      */
     private long calculateSharePurchaseFee(Order order, long grossCost) {
-        if (grossCost <= 0 || order == null || !order.isPlayerOrder()) return 0L;
-        var stack = itemID.getStack();
-        if (stack == null || stack.isEmpty()
-                || !StockMarketItems.isUsdQuotedAsset(stack.getItem())) return 0L;
+        if (order == null || !order.isPlayerOrder()) return 0L;
+        return calculateSharePurchaseFee(itemID, true, grossCost);
+    }
+
+    private static boolean isFinancialShareItem(ItemID assetID) {
+        if (assetID == null) return false;
+        var stack = assetID.getStack();
+        return stack != null && !stack.isEmpty()
+                && StockMarketItems.isUsdQuotedAsset(stack.getItem());
+    }
+
+    private static long calculateSharePurchaseFee(ItemID assetID, boolean playerPurchase, long grossCost) {
+        if (grossCost <= 0 || !playerPurchase || !isFinancialShareItem(assetID)) return 0L;
         return (long) Math.ceil(grossCost * 0.01d);
     }
 
