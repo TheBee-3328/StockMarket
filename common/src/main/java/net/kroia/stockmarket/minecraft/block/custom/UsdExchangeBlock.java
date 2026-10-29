@@ -3,6 +3,7 @@ package net.kroia.stockmarket.minecraft.block.custom;
 import net.kroia.stockmarket.minecraft.item.StockMarketItems;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.ItemInteractionResult;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
@@ -38,16 +39,16 @@ public final class UsdExchangeBlock extends Block {
     }
 
     @Override
-    protected InteractionResult useItemOn(ItemStack stack, BlockState state, Level level,
-                                          BlockPos pos, Player player, InteractionHand hand,
-                                          BlockHitResult hit) {
-        if (level.isClientSide) return InteractionResult.SUCCESS;
-        if (stack.isEmpty()) return InteractionResult.PASS;
+    protected ItemInteractionResult useItemOn(ItemStack stack, BlockState state, Level level,
+                                              BlockPos pos, Player player, InteractionHand hand,
+                                              BlockHitResult hit) {
+        if (level.isClientSide) return ItemInteractionResult.SUCCESS;
+        if (stack.isEmpty()) return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
 
         if (stack.is(StockMarketItems.SHARE_USD.get())) {
             player.displayClientMessage(Component.literal(
                     "USD tokens are the exchange payout; they cannot be exchanged back here."), true);
-            return InteractionResult.CONSUME;
+            return ItemInteractionResult.CONSUME;
         }
 
         int unitValue = getFixedUsdValue(stack.getItem());
@@ -74,7 +75,7 @@ public final class UsdExchangeBlock extends Block {
 
         player.displayClientMessage(Component.literal(
                 "Exchanged " + itemCount + " item(s) for " + totalUsd + " USD token(s)."), true);
-        return InteractionResult.CONSUME;
+        return ItemInteractionResult.CONSUME;
     }
 
     /** Returns fixed USD-token value per item, or zero when unsupported. */
