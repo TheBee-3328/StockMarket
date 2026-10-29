@@ -25,18 +25,18 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/../../MC_ModUtilities"
           git clone --depth 1 https://github.com/KROIA/MC_ModUtilities.git "$GITHUB_WORKSPACE/../../MC_ModUtilities/mc_1.21.1_MC_ModUtilities"
 
-      - name: Build MC_ModUtilities common
+      - name: Build MC_ModUtilities common and NeoForge artifacts
         working-directory: ../../MC_ModUtilities/mc_1.21.1_MC_ModUtilities
         run: |
           chmod +x gradlew
-          ./gradlew :common:build --no-daemon
+          ./gradlew :common:build :neoforge:build --no-daemon
 
       - name: Checkout BankSystem
         run: |
           mkdir -p "$GITHUB_WORKSPACE/../../BankSystem"
           git clone --depth 1 https://github.com/KROIA/BankSystem.git "$GITHUB_WORKSPACE/../../BankSystem/mc_1.21.1_BankSystem"
 
-      - name: Build BankSystem common
+      - name: Build BankSystem common and NeoForge artifacts
         working-directory: ../../BankSystem/mc_1.21.1_BankSystem
         run: |
           chmod +x gradlew
