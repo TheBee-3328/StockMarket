@@ -13,6 +13,7 @@ import net.kroia.modutilities.gui.elements.base.GuiElement;
 import net.kroia.modutilities.networking.client_server.streaming.StreamSystem;
 import net.kroia.stockmarket.StockMarketMod;
 import net.kroia.stockmarket.client.company.ShareVisualHelpers;
+import net.kroia.stockmarket.minecraft.item.StockMarketItems;
 import net.kroia.stockmarket.screen.uiElements.FavoritesBar;
 import net.kroia.stockmarket.screen.uiElements.OrderHistoryPanel;
 import net.kroia.stockmarket.screen.uiElements.PairSelectorWidget;
@@ -482,6 +483,9 @@ public class TradeScreen extends StockMarketGuiScreen {
     @Override
     public void tick() {
         super.tick();
+        // The first market-list response can arrive after the screen opens.
+        // Enforce the fixed USD leg once the server-synced quote unit is available.
+        enforceUsdPairBase();
         long now = System.currentTimeMillis();
 
         // Periodically update the market price on the trading panel (~500ms)
@@ -1045,6 +1049,79 @@ public class TradeScreen extends StockMarketGuiScreen {
         groupCompaniesButton.setBackgroundColor(companies ? MODE_BUTTON_SELECTED_COLOR : MODE_BUTTON_DEFAULT_COLOR);
     }
 
+    /** Finds the live USD quote-unit market among the server-synced markets. */
+    private @Nullable ItemID findUsdQuoteMarketID() {
+        for (ItemID candidate : getAvailableMarkets()) {
+            if (candidate != null && candidate.getStack().getItem() == StockMarketItems.SHARE_USD.get()) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private boolean isUsdQuoteCounterpart(@Nullable ItemID candidate) {
+        return candidate != null
+                && candidate.getStack() != null
+                && StockMarketItems.isUsdQuotedAsset(candidate.getStack().getItem());
+    }
+
+    /**
+     * Picks a financial instrument if the previous pair selection is absent or was
+     * a generic Minecraft item from the old unrestricted item-vs-item selector.
+     */
+    private @Nullable ItemID findDefaultUsdCounterpart(ItemID usdMarketID) {
+        if (isUsdQuoteCounterpart(currentMarketID) && !currentMarketID.equals(usdMarketID)
+                && getMarket(currentMarketID) != null) {
+            return currentMarketID;
+        }
+
+        PlayerPreferences prefs = StockMarketGuiElement.getPlayerPreferences();
+        ItemID previousWant = prefs.getLastPairWantMarketID();
+        if (isUsdQuoteCounterpart(previousWant) && !previousWant.equals(usdMarketID)
+                && getMarket(previousWant) != null) {
+            return previousWant;
+        }
+
+        for (ItemID candidate : getAvailableMarkets()) {
+            if (!candidate.equals(usdMarketID) && isUsdQuoteCounterpart(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * In pair mode USD is always the HAVE/base leg. Users choose only the asset
+     * they want to trade against USD, which makes the cross-rate a conventional
+     * USD-per-asset quote instead of an arbitrary item/item rate.
+     */
+    private void enforceUsdPairBase() {
+        if (!isPairMode) return;
+        ItemID usdMarketID = findUsdQuoteMarketID();
+        if (usdMarketID == null) return; // wait for the initial market-list sync
+
+        ItemID counterpart = pairWantMarketID;
+        if (!isUsdQuoteCounterpart(counterpart)
+                || counterpart.equals(usdMarketID)
+                || getMarket(counterpart) == null) {
+            counterpart = findDefaultUsdCounterpart(usdMarketID);
+        }
+
+        boolean changed = !usdMarketID.equals(pairHaveMarketID)
+                || !usdMarketID.equals(pairSelectorWidget.getHaveMarketID())
+                || !pairSelectorWidget.isHaveSelectionFixed()
+                || !(counterpart == pairWantMarketID
+                    || (counterpart != null && counterpart.equals(pairWantMarketID)));
+
+        pairHaveMarketID = usdMarketID;
+        pairWantMarketID = counterpart;
+        pairSelectorWidget.setFixedHaveMarketID(usdMarketID);
+        if (changed) {
+            pairSelectorWidget.setWantMarketID(counterpart);
+            onPairSelected(new PairSelectorWidget.PairSelection(usdMarketID, counterpart));
+        }
+    }
+
     /**
      * Toggles between Item/Money mode and Item/Item (pair) mode.
      * Shows/hides the FavoritesBar and PairSelectorWidget accordingly.
@@ -1055,6 +1132,10 @@ public class TradeScreen extends StockMarketGuiScreen {
         isPairMode = pairMode;
         favoritesBar.setEnabled(!pairMode);
         pairSelectorWidget.setEnabled(pairMode);
+        // USD pair mode only selects among the configured financial instruments,
+        // so the generic commodities/companies filter is hidden in this mode.
+        groupCommoditiesButton.setEnabled(!pairMode);
+        groupCompaniesButton.setEnabled(!pairMode);
         orderMarkerOverlay.setPairMode(pairMode);
         moneyModeButton.setBackgroundColor(pairMode ? MODE_BUTTON_DEFAULT_COLOR : MODE_BUTTON_SELECTED_COLOR);
         pairModeButton.setBackgroundColor(pairMode ? MODE_BUTTON_SELECTED_COLOR : MODE_BUTTON_DEFAULT_COLOR);
@@ -1090,6 +1171,10 @@ public class TradeScreen extends StockMarketGuiScreen {
                 pairWantMarketID = currentMarketID;
                 pairSelectorWidget.setWantMarketID(pairWantMarketID);
             }
+
+            // Replace legacy/persisted item-item selection with the fixed USD base
+            // as soon as the internal quote-unit market is present in the market list.
+            enforceUsdPairBase();
 
             // If both pair sides are already selected, configure cross-rate mode on the chart
             if (pairHaveMarketID != null && pairWantMarketID != null) {
