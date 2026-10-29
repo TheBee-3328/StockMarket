@@ -101,8 +101,8 @@ class RealStockPriceFeedTest {
         RealStockPriceFeed feed = feed(request ->
                 new RealStockPriceFeed.HttpResponseData(200, "{not-json"));
         try {
-            RealStockPriceFeed.FetchResult result = feed.fetchQuote("AAPL");
-            assertNull(result.quote());
+            RealStockPriceFeed.FetchResult result = feed.fetchCandle("AAPL");
+            assertNull(result.candle());
             assertFalse(result.rateLimited());
         } finally {
             feed.close();
@@ -122,7 +122,9 @@ class RealStockPriceFeedTest {
             feed.performRefreshBatch();
 
             assertEquals(1, requests.get(), "A 429 on the first symbol must stop the batch");
-            assertEquals("symbol=AAPL&token=test-token", firstSymbol.get());
+            assertTrue(firstSymbol.get().startsWith("symbol=AAPL&resolution=1&from="));
+            assertTrue(firstSymbol.get().contains("&to="));
+            assertTrue(firstSymbol.get().endsWith("&token=test-token"));
         } finally {
             feed.close();
         }
