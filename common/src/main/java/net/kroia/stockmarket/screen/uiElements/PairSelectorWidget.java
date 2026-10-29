@@ -13,6 +13,7 @@ import net.kroia.modutilities.gui.elements.base.GuiElement;
 import net.kroia.modutilities.gui.client.ClientGraphics;
 import net.kroia.modutilities.gui.layout.LayoutGrid;
 import net.kroia.stockmarket.client.company.ShareVisualHelpers;
+import net.kroia.stockmarket.minecraft.item.StockMarketItems;
 import net.kroia.stockmarket.stockmarket.market.ClientMarket;
 import net.kroia.stockmarket.util.StockMarketGuiElement;
 import net.minecraft.client.Minecraft;
@@ -469,15 +470,30 @@ public class PairSelectorWidget extends StockMarketGuiElement {
 
         List<ItemID> commodities = new ArrayList<>();
         List<ItemID> companies = new ArrayList<>();
+        boolean fixedUsdPairMode = fixedHaveMarketID != null;
         for (ItemID id : getAvailableMarkets()) {
             if (id.equals(excludeID)) continue;
-            if (ShareVisualHelpers.isCompanyShare(id)) companies.add(id);
-            else commodities.add(id);
+            if (fixedUsdPairMode) {
+                // The real-stock workflow is a quote-currency market, not a generic
+                // commodity-vs-commodity selector. Only configured stock/instrument
+                // tokens are valid counterparts to the fixed USD leg.
+                if (StockMarketItems.isUsdQuotedAsset(id.getStack().getItem())) {
+                    commodities.add(id);
+                }
+            } else if (ShareVisualHelpers.isCompanyShare(id)) {
+                companies.add(id);
+            } else {
+                commodities.add(id);
+            }
         }
         commodityCount = commodities.size();
         companyCount = companies.size();
 
-        List<ItemID> visible = (activeTab == Tab.COMPANIES) ? companies : commodities;
+        // Fixed-USD mode intentionally presents one concise list of real-stock
+        // counterparts independent of the generic Commodities/Companies filter.
+        List<ItemID> visible = fixedUsdPairMode
+                ? commodities
+                : ((activeTab == Tab.COMPANIES) ? companies : commodities);
         sortMarkets(visible, sortByTab.get(activeTab));
 
         for (ItemID marketID : visible) {
