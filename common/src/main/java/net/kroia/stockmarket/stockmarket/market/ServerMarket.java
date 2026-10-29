@@ -14,6 +14,7 @@ import net.kroia.stockmarket.data.table.record.OrderRecordStruct;
 import net.kroia.stockmarket.stockmarket.market.core.order.Order;
 import net.kroia.stockmarket.stockmarket.market.core.MatchingEngine;
 import net.kroia.stockmarket.stockmarket.market.core.Orderbook;
+import net.kroia.stockmarket.stockmarket.market.NetheriteExchangeLedger;
 import net.minecraft.nbt.CompoundTag;
 import org.jetbrains.annotations.Nullable;
 
@@ -831,10 +832,18 @@ public class ServerMarket implements ServerSaveable, IServerMarket {
         if (order.isBotOrder()) return; // skip bot orders (no player executor)
         if (order.getFilledVolume() == 0) return; // skip orders with no fills (e.g. cancelled before any execution)
         if (order.getType() == Order.Type.INTER_MARKET) return; // saved by InterMarketExecutor with groupID
-        if (BACKEND_INSTANCES == null || BACKEND_INSTANCES.ORDER_RECORD_MANAGER == null) return;
+        if (BACKEND_INSTANCES == null) return;
 
         OrderRecordStruct record = order.getHistoricalRecord();
-        BACKEND_INSTANCES.ORDER_RECORD_MANAGER.save(record);
+        if (BACKEND_INSTANCES.ORDER_RECORD_MANAGER != null) {
+            BACKEND_INSTANCES.ORDER_RECORD_MANAGER.save(record);
+        }
+
+        // Profit credit is player-specific and uses the same completed fills that
+        // are saved to order history. The ledger filters for USD-quoted share tokens.
+        NetheriteExchangeLedger.recordStockTrade(
+                order.getExecutorPlayerUUID(), itemID.getStack(), order.getFilledVolume(),
+                order.getAverageExecutionPrice(), BankSystemModSettings.ITEM_FRACTION_SCALE_FACTOR);
     }
 
 
