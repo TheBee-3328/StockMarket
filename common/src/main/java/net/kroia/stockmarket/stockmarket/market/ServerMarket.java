@@ -48,6 +48,21 @@ public class ServerMarket implements ServerSaveable, IServerMarket {
      */
     private String externalPriceFeedTicker = "";
 
+    /**
+     * The provider's last completed OHLC candle is replayed one candle late.
+     * During the replay, the simulation moves between these fixed OHLC anchors
+     * instead of allowing the ordinary matching engine to overwrite the feed price.
+     */
+    private boolean externalCandleActive = false;
+    private long externalCandleOpenPrice;
+    private long externalCandleHighPrice;
+    private long externalCandleLowPrice;
+    private long externalCandleClosePrice;
+    private long externalCandleTimestampMs;
+    private long externalCandleSimulationStartedAtMs;
+    private long externalCandleDurationMs = 60_000L;
+    private double externalCandleNoiseSeed;
+
     private MarketSettings settings;
 
     // Callback fired when this market closes, used by ServerMarketManager to cancel inter-market orders
@@ -130,6 +145,83 @@ public class ServerMarket implements ServerSaveable, IServerMarket {
     }
 
     /**
+     * Installs a completed provider candle and starts replaying it over one candle interval.
+     * The supplied OHLC values remain authoritative; the live simulation only interpolates
+     * between them. The source timestamp is retained for chart history while simulation
+     * starts now, which intentionally introduces a one-candle delay.
+     */
+    public boolean setExternalCandle(String ticker, long open, long high, long low, long close,
+                                     long sourceTimestampMs, long durationMs)
+    {
+        if (!isOwnedByExternalPriceFeed(ticker) || open <= 0 || high <= 0 || low <= 0 || close <= 0
+                || durationMs <= 0 || high < Math.max(open, close) || low > Math.min(open, close)
+                || low <= 0 || sourceTimestampMs <= 0) {
+            return false;
+        }
+
+        this.externalCandleActive = true;
+        this.externalCandleOpenPrice = open;
+        this.externalCandleHighPrice = high;
+        this.externalCandleLowPrice = low;
+        this.externalCandleClosePrice = close;
+        this.externalCandleTimestampMs = sourceTimestampMs;
+        this.externalCandleSimulationStartedAtMs = System.currentTimeMillis();
+        this.externalCandleDurationMs = durationMs;
+        this.externalCandleNoiseSeed = Math.floorMod(sourceTimestampMs / 60_000L, 997L) / 997.0;
+
+        this.currentMarketPrice = open;
+        this.orderbook.setCurrentMarketPrice(open);
+        this.candleStartTime = sourceTimestampMs;
+        this.candleOpenPrice = open;
+        this.candleHighPrice = high;
+        this.candleLowPrice = low;
+        this.candleTradedVolume = 0;
+        return true;
+    }
+
+    /** Return the price at this tick, following the provider OHLC path exactly. */
+    private long getExternalSimulationPrice(long nowMs)
+    {
+        long elapsedMs = Math.max(0L, nowMs - externalCandleSimulationStartedAtMs);
+        double progress = Math.min(1.0, (double) elapsedMs / Math.max(1L, externalCandleDurationMs));
+        if (progress >= 1.0) return externalCandleClosePrice;
+
+        // Use the candle's direction to choose a plausible first excursion, then visit
+        // the opposite extreme before converging on the exact provider close.
+        double firstExtreme = externalCandleClosePrice >= externalCandleOpenPrice
+                ? externalCandleLowPrice : externalCandleHighPrice;
+        double secondExtreme = externalCandleClosePrice >= externalCandleOpenPrice
+                ? externalCandleHighPrice : externalCandleLowPrice;
+
+        double base;
+        if (progress < 0.22) {
+            base = interpolate(externalCandleOpenPrice, firstExtreme, progress / 0.22);
+        } else if (progress < 0.68) {
+            base = interpolate(firstExtreme, secondExtreme, (progress - 0.22) / 0.46);
+        } else {
+            base = interpolate(secondExtreme, externalCandleClosePrice, (progress - 0.68) / 0.32);
+        }
+
+        // Low-amplitude smooth intrabar variation creates plausible tick movement without
+        // ever breaking the real candle's range or changing its prescribed endpoints.
+        double range = externalCandleHighPrice - (double) externalCandleLowPrice;
+        double envelope = Math.sin(Math.PI * progress);
+        double phase = externalCandleNoiseSeed * Math.PI * 2.0;
+        double wobble = range * 0.025 * envelope
+                * (0.65 * Math.sin(progress * Math.PI * 26.0 + phase)
+                + 0.35 * Math.sin(progress * Math.PI * 58.0 + phase * 1.71));
+        double simulated = Math.max(externalCandleLowPrice,
+                Math.min(externalCandleHighPrice, base + wobble));
+        return Math.max(1L, Math.round(simulated));
+    }
+
+    private static double interpolate(double from, double to, double progress)
+    {
+        double bounded = Math.max(0.0, Math.min(1.0, progress));
+        return from + (to - from) * bounded;
+    }
+
+    /**
      * Whether this market is already owned by the feed for the given ticker.
      * An empty owner means it is a normal item market and must not be taken over.
      */
@@ -166,21 +258,22 @@ public class ServerMarket implements ServerSaveable, IServerMarket {
     public boolean setExternalReferencePrice(String ticker, long newPrice)
     {
         if (newPrice <= 0 || !isOwnedByExternalPriceFeed(ticker)) return false;
-        long previous = this.currentMarketPrice;
         this.currentMarketPrice = newPrice;
         if ("USD".equalsIgnoreCase(ticker)) {
-            // The USD quote-unit is a fixed 1.00 base, not a floating asset.
-            // Keep its entire current candle flat too; otherwise transient
-            // order-driven spikes would contaminate synthetic USD cross-rate OHLC
-            // even though the reference price is immediately re-anchored.
+            // USD is a fixed quote unit. It must not acquire trade-driven prices.
+            this.externalCandleActive = false;
             this.candleOpenPrice = newPrice;
             this.candleHighPrice = newPrice;
             this.candleLowPrice = newPrice;
+            this.orderbook.setCurrentMarketPrice(newPrice);
             return true;
         }
+        // Kept for compatibility with callers that only have a reference quote.
+        // The Finnhub candle path uses setExternalCandle so open/high/low/close remain fixed.
         this.candleLowPrice = Math.min(this.candleLowPrice, newPrice);
         this.candleHighPrice = Math.max(this.candleHighPrice, newPrice);
-        if (previous <= 0) this.candleOpenPrice = newPrice;
+        if (this.candleOpenPrice <= 0) this.candleOpenPrice = newPrice;
+        this.orderbook.setCurrentMarketPrice(newPrice);
         return true;
     }
     @Override
@@ -670,13 +763,25 @@ public class ServerMarket implements ServerSaveable, IServerMarket {
     @Override
     public void update()
     {
-        orderbook.setCurrentMarketPrice(currentMarketPrice);
+        // Advance the external candle replay first. The matching engine then matches
+        // normal orders against this tick's simulated price, while onPriceChanged()
+        // deliberately prevents fills from becoming a new authoritative market price.
+        if (externalCandleActive) {
+            currentMarketPrice = getExternalSimulationPrice(System.currentTimeMillis());
+        }
 
+        orderbook.setCurrentMarketPrice(currentMarketPrice);
         matchingEngine.update(currentMarketPrice);
         candleTradedVolume += matchingEngine.getLastTradedVolume();
         trackPlayerNetFlow(matchingEngine.getLastPlayerFilledVolume());
 
-        // Update the current candle
+        // Re-anchor the virtual orderbook after order matching. For feed-owned markets,
+        // its price window must follow the replayed provider price, not a fill price.
+        if (!externalPriceFeedTicker.isEmpty()) {
+            orderbook.setCurrentMarketPrice(currentMarketPrice);
+        }
+
+        // Retain the complete provider range while still incorporating the simulated tick.
         candleLowPrice = Math.min(candleLowPrice, currentMarketPrice);
         candleHighPrice = Math.max(candleHighPrice, currentMarketPrice);
     }
@@ -859,6 +964,13 @@ public class ServerMarket implements ServerSaveable, IServerMarket {
 
     private void onPriceChanged(long newPrice)
     {
+        // Externally owned markets are price-led by the delayed provider candle.
+        // Fills still execute and move inventory, but their trade price must not
+        // replace the authoritative replay price with the virtual-book default.
+        if (!externalPriceFeedTicker.isEmpty()) {
+            orderbook.setCurrentMarketPrice(currentMarketPrice);
+            return;
+        }
         currentMarketPrice = newPrice;
         orderbook.setCurrentMarketPrice(currentMarketPrice);
     }
