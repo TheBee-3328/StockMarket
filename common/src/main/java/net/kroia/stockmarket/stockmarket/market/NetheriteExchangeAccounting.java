@@ -98,13 +98,8 @@ public final class NetheriteExchangeAccounting {
         if (valuePerIngot <= 0) return 0L;
 
         long principalIngots = player.netheritePrincipalUsdRaw / valuePerIngot;
-        long netProfitRaw = Math.max(0L, player.realizedProfitUsdRaw);
-        if (netProfitRaw == 0) return principalIngots;
-
-        BigInteger profitAllowanceRaw = BigInteger.valueOf(netProfitRaw)
-                .multiply(BigInteger.valueOf(player.netheritePrincipalUsdRaw))
-                .divide(BigInteger.valueOf(player.totalDepositedUsdRaw));
-        long profitIngots = profitAllowanceRaw.divide(BigInteger.valueOf(valuePerIngot))
+        long profitAllowanceRaw = getAvailableProfitAllowanceRaw(player);
+        long profitIngots = profitAllowanceRaw / valuePerIngot
                 .min(BigInteger.valueOf(Long.MAX_VALUE)).longValue();
         return addSaturated(principalIngots, profitIngots);
     }
@@ -120,11 +115,7 @@ public final class NetheriteExchangeAccounting {
         if (player == null || count > getMaxNetheriteWithdrawals(playerId, scaleFactor)) return false;
 
         long valuePerIngot = multiplySaturated(NETHERITE_USD_VALUE, scaleFactor);
-        long profitRaw = Math.max(0L, player.realizedProfitUsdRaw);
-        long profitAllowanceRaw = BigInteger.valueOf(profitRaw)
-                .multiply(BigInteger.valueOf(player.netheritePrincipalUsdRaw))
-                .divide(BigInteger.valueOf(Math.max(1L, player.totalDepositedUsdRaw)))
-                .min(BigInteger.valueOf(Long.MAX_VALUE)).longValue();
+        long profitAllowanceRaw = getAvailableProfitAllowanceRaw(player);
         long profitIngotsAvailable = profitAllowanceRaw / valuePerIngot;
         long profitIngotsSpent = Math.min(count, profitIngotsAvailable);
         long principalIngotsSpent = count - profitIngotsSpent;
@@ -137,7 +128,8 @@ public final class NetheriteExchangeAccounting {
             return false;
         }
 
-        player.realizedProfitUsdRaw -= profitSpendRaw;
+        player.netheriteProfitWithdrawnUsdRaw = addSaturated(
+                player.netheriteProfitWithdrawnUsdRaw, profitSpendRaw);
         player.netheritePrincipalUsdRaw -= principalSpendRaw;
         player.totalDepositedUsdRaw -= principalSpendRaw;
         if (player.totalDepositedUsdRaw < player.netheritePrincipalUsdRaw) {
@@ -161,6 +153,22 @@ public final class NetheriteExchangeAccounting {
         return player == null ? 0L : player.realizedProfitUsdRaw;
     }
 
+    public synchronized long getAvailableProfitAllowanceRaw(UUID playerId) {
+        PlayerLedger player = players.get(playerId);
+        return player == null ? 0L : getAvailableProfitAllowanceRaw(player);
+    }
+
+    private static long getAvailableProfitAllowanceRaw(PlayerLedger player) {
+        if (player.totalDepositedUsdRaw <= 0 || player.netheritePrincipalUsdRaw <= 0) return 0L;
+        long netProfitRaw = Math.max(0L, player.realizedProfitUsdRaw);
+        BigInteger eligible = BigInteger.valueOf(netProfitRaw)
+                .multiply(BigInteger.valueOf(player.netheritePrincipalUsdRaw))
+                .divide(BigInteger.valueOf(player.totalDepositedUsdRaw));
+        BigInteger remaining = eligible.subtract(BigInteger.valueOf(player.netheriteProfitWithdrawnUsdRaw))
+                .max(BigInteger.ZERO);
+        return remaining.min(BigInteger.valueOf(Long.MAX_VALUE)).longValue();
+    }
+
     public synchronized CompoundTag save() {
         CompoundTag root = new CompoundTag();
         ListTag playerTags = new ListTag();
@@ -171,6 +179,7 @@ public final class NetheriteExchangeAccounting {
             playerTag.putLong("totalDepositedUsdRaw", player.totalDepositedUsdRaw);
             playerTag.putLong("netheritePrincipalUsdRaw", player.netheritePrincipalUsdRaw);
             playerTag.putLong("realizedProfitUsdRaw", player.realizedProfitUsdRaw);
+            playerTag.putLong("netheriteProfitWithdrawnUsdRaw", player.netheriteProfitWithdrawnUsdRaw);
 
             ListTag positions = new ListTag();
             for (Map.Entry<String, Position> posEntry : player.positions.entrySet()) {
@@ -200,6 +209,10 @@ public final class NetheriteExchangeAccounting {
             player.totalDepositedUsdRaw = Math.max(0L, playerTag.getLong("totalDepositedUsdRaw"));
             player.netheritePrincipalUsdRaw = Math.max(0L, playerTag.getLong("netheritePrincipalUsdRaw"));
             player.realizedProfitUsdRaw = playerTag.getLong("realizedProfitUsdRaw");
+            player.netheriteProfitWithdrawnUsdRaw = Math.max(0L, playerTag.getLong("netheriteProfitWithdrawnUsdRaw"));
+            if (player.netheritePrincipalUsdRaw > player.totalDepositedUsdRaw) {
+                player.netheritePrincipalUsdRaw = player.totalDepositedUsdRaw;
+            }
 
             ListTag positions = playerTag.getList("positions", Tag.TAG_COMPOUND);
             for (int j = 0; j < positions.size(); j++) {
@@ -239,6 +252,7 @@ public final class NetheriteExchangeAccounting {
         long totalDepositedUsdRaw;
         long netheritePrincipalUsdRaw;
         long realizedProfitUsdRaw;
+        long netheriteProfitWithdrawnUsdRaw;
         final Map<String, Position> positions = new HashMap<>();
     }
 
