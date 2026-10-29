@@ -40,7 +40,7 @@ jobs:
         working-directory: ../../BankSystem/mc_1.21.1_BankSystem
         run: |
           chmod +x gradlew
-          ./gradlew :common:build --no-daemon
+          ./gradlew :common:build :neoforge:build --no-daemon
 
       - name: Build NeoForge mod
         run: |
