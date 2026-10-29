@@ -145,9 +145,13 @@ public final class RealStockPriceFeed implements AutoCloseable {
                 return;
             }
             var market = manager.getMarket(id);
-            if (market == null) {
-                market = manager.createMarket(id);
+            // Do not silently repurpose an existing vanilla item market: it would
+            // replace that item's economic price with a company share quote.
+            if (market != null) {
+                StockMarketMod.LOGGER.warn("[RealStockFeed] Mapping {} points to existing market item {}; refusing to overwrite it. Choose an item that is not otherwise traded.", mapping.ticker, mapping.itemId);
+                return;
             }
+            market = manager.createMarket(id);
             if (market instanceof ServerMarket serverMarket) {
                 long raw = Math.max(1L, net.kroia.stockmarket.stockmarket.marketmanager.MarketManager.convertToRawAmountStatic(quote.price * mapping.scale));
                 serverMarket.setExternalReferencePrice(raw);
