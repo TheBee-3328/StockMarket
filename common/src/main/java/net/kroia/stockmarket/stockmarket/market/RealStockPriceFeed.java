@@ -127,9 +127,11 @@ public final class RealStockPriceFeed implements AutoCloseable {
         if (key == null || key.isBlank()) return false;
         String normalized = key.toUpperCase(Locale.ROOT);
         // Treat both the current and older generated placeholder spellings as inert.
-        return !API_KEY_PLACEHOLDER.equals(key)
-                && !normalized.contains("YOUR_TWELVE_DATA_API_KEY")
-                && !normalized.startsWith("REPLACE_WITH");
+        boolean looksLikePlaceholder = normalized.startsWith("REPLACE_WITH")
+                || normalized.startsWith("PUT_YOUR")
+                || (normalized.contains("YOUR")
+                    && (normalized.contains("API_KEY") || normalized.contains("APIKEY")));
+        return !API_KEY_PLACEHOLDER.equals(key) && !looksLikePlaceholder;
     }
 
     private void refreshNow() {
