@@ -83,6 +83,7 @@ class NetheriteExchangeAccountingTest {
         assertEquals(accounting.getTotalDepositedUsdRaw(player), restored.getTotalDepositedUsdRaw(player));
         assertEquals(accounting.getNetheritePrincipalUsdRaw(player), restored.getNetheritePrincipalUsdRaw(player));
         assertEquals(0, restored.getRealizedProfitUsdRaw(player));
-        assertFalse(restored.recordTrade(player, "example:nvda", -10 * SCALE, 125 * SCALE, SCALE));
+        assertTrue(restored.recordTrade(player, "example:nvda", -10 * SCALE, 125 * SCALE, SCALE));
+        assertEquals(150 * SCALE, restored.getRealizedProfitUsdRaw(player));
     }
 }
