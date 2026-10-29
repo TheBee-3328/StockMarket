@@ -1,0 +1,48 @@
+name: Build NeoForge
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-neoforge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      # These builds intentionally use sibling-project flatDir paths in Gradle.
+      # Prepare the sibling checkouts at those exact paths and build their common
+      # JARs before StockMarket resolves its compile-time-only dependencies.
+      - name: Checkout MC_ModUtilities
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/../../MC_ModUtilities"
+          git clone --depth 1 https://github.com/KROIA/MC_ModUtilities.git "$GITHUB_WORKSPACE/../../MC_ModUtilities/mc_1.21.1_MC_ModUtilities"
+
+      - name: Build MC_ModUtilities common and NeoForge artifacts
+        working-directory: ../../MC_ModUtilities/mc_1.21.1_MC_ModUtilities
+        run: |
+          chmod +x gradlew
+          ./gradlew :common:build :fabric:build :neoforge:build --no-daemon
+
+      - name: Checkout BankSystem
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/../../BankSystem"
+          git clone --depth 1 https://github.com/KROIA/BankSystem.git "$GITHUB_WORKSPACE/../../BankSystem/mc_1.21.1_BankSystem"
+
+      - name: Build BankSystem common, Fabric and NeoForge artifacts
+        working-directory: ../../BankSystem/mc_1.21.1_BankSystem
+        run: |
+          chmod +x gradlew
+          ./gradlew :common:build :fabric:build :neoforge:build --no-daemon
+
+      - name: Run common unit tests and build NeoForge mod
+        run: |
+          chmod +x gradlew
+          ./gradlew :common:test :neoforge:build --no-daemon

@@ -41,6 +41,13 @@ public class ServerMarket implements ServerSaveable, IServerMarket {
     private long currentMarketPrice;
     private long netPlayerItemFlow = 0;
 
+    /**
+     * Non-empty only for markets explicitly created for a real-stock ticker.
+     * Persisted with the market so a restart can safely distinguish our own
+     * stock markets from unrelated markets that happen to use the same item.
+     */
+    private String externalPriceFeedTicker = "";
+
     private MarketSettings settings;
 
     // Callback fired when this market closes, used by ServerMarketManager to cancel inter-market orders
@@ -120,6 +127,51 @@ public class ServerMarket implements ServerSaveable, IServerMarket {
     public void setCurrentMarketPriceNoRedistribute(long newPrice)
     {
         this.currentMarketPrice = newPrice;
+    }
+
+    /**
+     * Whether this market is already owned by the feed for the given ticker.
+     * An empty owner means it is a normal item market and must not be taken over.
+     */
+    public boolean isOwnedByExternalPriceFeed(String ticker)
+    {
+        return ticker != null && !externalPriceFeedTicker.isEmpty()
+                && externalPriceFeedTicker.equalsIgnoreCase(ticker.trim());
+    }
+
+    /**
+     * Claims a newly-created market for a stock ticker. Existing ownership is
+     * immutable except for an idempotent claim by the same ticker.
+     */
+    public boolean claimExternalPriceFeedOwnership(String ticker)
+    {
+        if (ticker == null || ticker.isBlank()) return false;
+        String normalized = ticker.trim().toUpperCase(java.util.Locale.ROOT);
+        if (!externalPriceFeedTicker.isEmpty() && !externalPriceFeedTicker.equals(normalized)) return false;
+        externalPriceFeedTicker = normalized;
+        return true;
+    }
+
+    /**
+     * Applies the latest quote as a reference/anchor price for this feed-owned
+     * market. Player limit orders remain in the book at their existing prices,
+     * and player fills may move the market between refreshes. The ordinary
+     * ServerMarket.update() path recenters the virtual-liquidity window on its
+     * next tick: overlapping levels are retained, and only newly exposed levels
+     * use the configured default-volume provider. This method does not reset
+     * or redistribute liquidity immediately on the network worker's callback.
+     *
+     * @return false if this market is not owned by the given ticker
+     */
+    public boolean setExternalReferencePrice(String ticker, long newPrice)
+    {
+        if (newPrice <= 0 || !isOwnedByExternalPriceFeed(ticker)) return false;
+        long previous = this.currentMarketPrice;
+        this.currentMarketPrice = newPrice;
+        this.candleLowPrice = Math.min(this.candleLowPrice, newPrice);
+        this.candleHighPrice = Math.max(this.candleHighPrice, newPrice);
+        if (previous <= 0) this.candleOpenPrice = newPrice;
+        return true;
     }
     @Override
     public void test_clearOrderbook()
@@ -829,6 +881,8 @@ public class ServerMarket implements ServerSaveable, IServerMarket {
         tag.putLong("defaultPrice", settings.defaultPrice);
         tag.putFloat("naturalAbundance", settings.naturalAbundance);
         tag.putLong("netPlayerItemFlow", netPlayerItemFlow);
+        // Empty on ordinary markets; preserves stock-feed ownership across restarts.
+        tag.putString("externalPriceFeedTicker", externalPriceFeedTicker);
         // Persist the new preset-derived flags so restarts keep the admin's intent.
         // Reads on the load side are guarded with contains() so old NBT still loads
         // with the field defaults (true / false / false respectively).
@@ -870,6 +924,9 @@ public class ServerMarket implements ServerSaveable, IServerMarket {
         {
             netPlayerItemFlow = tag.getLong("netPlayerItemFlow");
         }
+        // Legacy markets have no owner field and therefore remain ordinary item markets.
+        externalPriceFeedTicker = tag.contains("externalPriceFeedTicker")
+                ? tag.getString("externalPriceFeedTicker") : "";
         if(tag.contains("virtualOrderbookEnabled"))
         {
             settings.virtualOrderbookEnabled = tag.getBoolean("virtualOrderbookEnabled");
