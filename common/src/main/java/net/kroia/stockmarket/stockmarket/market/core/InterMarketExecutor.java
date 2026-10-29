@@ -220,8 +220,13 @@ public class InterMarketExecutor
         else
         {
             // Buy-direction: back-calculate the minimum sell to fund the buy target
+            long requiredProceeds = simBuy.dollarAmount();
+            if (sharePurchase) {
+                requiredProceeds = Math.addExact(requiredProceeds,
+                        (long) Math.ceil(requiredProceeds * 0.01d));
+            }
             DepthSimulation.SimResult simSellExact = DepthSimulation.simulateSellForDollars(
-                    haveOrderbook, simBuy.dollarAmount(), havePrice);
+                    haveOrderbook, requiredProceeds, havePrice);
 
             if (simSellExact.volumeFilled() <= 0)
             {
