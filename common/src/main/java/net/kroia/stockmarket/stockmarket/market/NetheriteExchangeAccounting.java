@@ -18,8 +18,6 @@ import java.util.UUID;
  */
 public final class NetheriteExchangeAccounting {
     public static final long NETHERITE_USD_VALUE = 500L;
-    private static final int BUY_FEE_BASIS_POINTS = 100;
-    private static final BigInteger TEN_THOUSAND = BigInteger.valueOf(10_000L);
 
     private final Map<UUID, PlayerLedger> players = new HashMap<>();
 
@@ -123,7 +121,7 @@ public final class NetheriteExchangeAccounting {
         long principalSpendRaw = multiplySaturated(principalIngotsSpent, valuePerIngot);
         if (principalSpendRaw > player.netheritePrincipalUsdRaw
                 || principalSpendRaw > player.totalDepositedUsdRaw
-                || profitSpendRaw > player.realizedProfitUsdRaw) {
+                || profitSpendRaw > Math.max(0L, player.realizedProfitUsdRaw)) {
             return false;
         }
 
