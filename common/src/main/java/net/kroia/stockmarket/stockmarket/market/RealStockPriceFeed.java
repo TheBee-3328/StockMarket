@@ -46,10 +46,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class RealStockPriceFeed implements AutoCloseable {
     private static final long MIN_REFRESH_MS = 60_000L;
     private static final long MILLIS_PER_DAY = 24L * 60L * 60L * 1000L;
-    // Twelve Data Basic/free tier has historically allowed 800 credits/day and
-    // 8 credits/minute. Each /price symbol quote consumes one credit. Keep this
-    // conservative budget centralized so it can be adjusted if provider terms change.
-    private static final long FREE_TIER_CREDITS_PER_DAY = 800L;
+    // Twelve Data Basic/free tier allows 800 API credits/day and 8 credits/minute.
+    // Each /price symbol quote consumes one credit. Use only 90% for this feed so
+    // failed requests or unrelated use of the same API key have some headroom.
+    private static final long PROVIDER_FREE_TIER_CREDITS_PER_DAY = 800L;
+    private static final long FEED_DAILY_CREDIT_BUDGET = PROVIDER_FREE_TIER_CREDITS_PER_DAY * 9 / 10;
     private static final long MIN_INTER_SYMBOL_DELAY_MS = 8_500L;
     private static final long RATE_LIMIT_BACKOFF_MS = 5 * 60_000L;
     private static final String API_KEY_PLACEHOLDER = "REPLACE_WITH_YOUR_TWELVE_DATA_API_KEY";
@@ -104,16 +105,17 @@ public final class RealStockPriceFeed implements AutoCloseable {
     }
 
     /**
-     * Respect the configured interval while also staying below the configured
-     * Basic/free-tier daily credit budget. For example, five tickers require at
-     * least a nine-minute cycle at 800 credits/day, not one request per minute.
+     * Respect the configured interval while staying under a 720-credit/day feed
+     * budget, leaving 80 credits below the documented 800-credit Basic limit.
+     * For example, five tickers require at least a ten-minute cycle, not one
+     * request per minute.
      */
     private long effectiveRefreshIntervalMs() {
         long configured = Math.max(MIN_REFRESH_MS, refreshMs);
         if (mappings.isEmpty()) return configured;
         long creditsForOneCycle = mappings.size();
         long dailyBudgetInterval = (creditsForOneCycle * MILLIS_PER_DAY
-                + FREE_TIER_CREDITS_PER_DAY - 1) / FREE_TIER_CREDITS_PER_DAY;
+                + FEED_DAILY_CREDIT_BUDGET - 1) / FEED_DAILY_CREDIT_BUDGET;
         return Math.max(configured, dailyBudgetInterval);
     }
 
