@@ -5,6 +5,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.kroia.banksystem.util.ItemID;
+import net.kroia.stockmarket.api.integration.MarketConfig;
+import net.kroia.stockmarket.minecraft.item.StockMarketItems;
 import net.kroia.stockmarket.StockMarketMod;
 import net.kroia.stockmarket.stockmarket.marketmanager.MarketManager;
 import net.kroia.stockmarket.stockmarket.marketmanager.ServerMarketManager;
@@ -174,6 +176,8 @@ public final class RealStockPriceFeed implements AutoCloseable {
     private volatile long refreshMs = MIN_REFRESH_MS;
     private volatile long nextRefreshAt;
     private volatile long lastRateLimitAt;
+    private volatile ItemID usdAnchorItemID;
+    private boolean warnedUsdOwnershipConflict;
 
     private RealStockPriceFeed(MinecraftServer server, ServerMarketManager manager, Path configPath) {
         this(server, manager, configPath, null);
@@ -211,6 +215,9 @@ public final class RealStockPriceFeed implements AutoCloseable {
 
     public static RealStockPriceFeed start(MinecraftServer server, ServerMarketManager manager, Path configPath) {
         RealStockPriceFeed feed = new RealStockPriceFeed(server, manager, configPath);
+        // USD is an internal quote-unit market, not a Finnhub symbol. Create and
+        // anchor it even when the external API token is absent.
+        feed.ensureUsdMarketAnchored();
         feed.nextRefreshAt = System.currentTimeMillis() + feed.effectiveRefreshIntervalMs();
         feed.refreshNow();
         return feed;
@@ -218,7 +225,12 @@ public final class RealStockPriceFeed implements AutoCloseable {
 
     /** Called on the server thread. HTTPS requests are never performed in a tick. */
     public void tick() {
-        if (closed.get() || !enabled || mappings.isEmpty() || !hasUsableApiKey()) return;
+        if (closed.get()) return;
+        // The base currency is always USD and must remain at exactly 1.0 in the
+        // same display currency as all imported reference prices. Maintain it
+        // independently of Finnhub credentials and refresh state.
+        ensureUsdMarketAnchored();
+        if (!enabled || mappings.isEmpty() || !hasUsableApiKey()) return;
         long now = System.currentTimeMillis();
         if (now < nextRefreshAt || inFlight.get()) return;
         long backoffUntil = rateLimitBackoffUntil();
@@ -452,6 +464,66 @@ public final class RealStockPriceFeed implements AutoCloseable {
         } catch (Exception e) {
             if (!closed.get()) {
                 StockMarketMod.LOGGER.warn("[RealStockFeed] Failed applying {}: {}", mapping.ticker, e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Creates the internal USD quote-unit market and keeps its reference price at
+     * exactly 1.0. It is deliberately not a Finnhub mapping: FX, crypto and stocks
+     * all use USD as their shared quote currency in the pair selector.
+     *
+     * <p>The market's ownership marker prevents an unrelated market using the same
+     * item ID from being silently taken over. A created USD market opts out of
+     * plugin auto-subscription so a target-price or volatility plugin cannot move
+     * the quote unit away from 1.0.
+     */
+    private void ensureUsdMarketAnchored() {
+        if (closed.get() || manager == null) return;
+        try {
+            ItemID itemID = usdAnchorItemID;
+            if (itemID == null) {
+                ItemStack usdStack = new ItemStack(StockMarketItems.SHARE_USD.get());
+                itemID = ItemID.getOrRegisterFromItemStackServerSide_direct(usdStack);
+                if (itemID == null || !itemID.isValid()) {
+                    StockMarketMod.LOGGER.warn("[RealStockFeed] Could not register the USD quote-unit item.");
+                    return;
+                }
+                usdAnchorItemID = itemID;
+            }
+
+            var existing = manager.getMarket(itemID);
+            ServerMarket usdMarket;
+            if (existing == null) {
+                var created = manager.createMarketWithConfig(
+                        itemID,
+                        new MarketConfig(true, 1.0f, 10.0f, true));
+                if (!(created instanceof ServerMarket candidate)) {
+                    StockMarketMod.LOGGER.warn("[RealStockFeed] Could not create the USD quote-unit market.");
+                    return;
+                }
+                if (!candidate.claimExternalPriceFeedOwnership("USD")) {
+                    StockMarketMod.LOGGER.warn("[RealStockFeed] Could not claim the newly created USD quote-unit market.");
+                    return;
+                }
+                usdMarket = candidate;
+                StockMarketMod.LOGGER.info("[RealStockFeed] Created the USD quote-unit market at 1.0.");
+            } else if (existing instanceof ServerMarket candidate
+                    && candidate.isOwnedByExternalPriceFeed("USD")) {
+                usdMarket = candidate;
+            } else {
+                if (!warnedUsdOwnershipConflict) {
+                    StockMarketMod.LOGGER.warn("[RealStockFeed] The USD quote-unit item already has an unrelated market; refusing to take it over. Remove that market before using fixed-USD pair mode.");
+                    warnedUsdOwnershipConflict = true;
+                }
+                return;
+            }
+
+            long rawOneUsd = Math.max(1L, MarketManager.convertToRawAmountStatic(1.0));
+            usdMarket.setExternalReferencePrice("USD", rawOneUsd);
+        } catch (Exception e) {
+            if (!closed.get()) {
+                StockMarketMod.LOGGER.warn("[RealStockFeed] Could not maintain the USD quote-unit market: {}", e.getMessage());
             }
         }
     }
