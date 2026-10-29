@@ -133,8 +133,12 @@ public final class RealStockPriceFeed implements AutoCloseable {
 
     private void applyQuote(Mapping mapping, Quote quote) {
         try {
-            ItemID id = ItemID.getOrRegisterFromItemStackServerSide_direct(
-                    net.kroia.banksystem.util.ItemIDManager.getItemStackFromItemIDString(mapping.itemId));
+            net.minecraft.world.item.ItemStack stack = resolveItemStack(mapping.itemId);
+            if (stack.isEmpty()) {
+                StockMarketMod.LOGGER.warn("[RealStockFeed] Could not resolve item '{}' for {}", mapping.itemId, mapping.ticker);
+                return;
+            }
+            ItemID id = ItemID.getOrRegisterFromItemStackServerSide_direct(stack);
             // Unknown/unresolvable mapped items are intentionally skipped.
             if (id == null || !id.isValid()) {
                 StockMarketMod.LOGGER.warn("[RealStockFeed] Invalid Minecraft item mapping '{}' for {}", mapping.itemId, mapping.ticker);
@@ -152,6 +156,18 @@ public final class RealStockPriceFeed implements AutoCloseable {
             }
         } catch (Exception e) {
             StockMarketMod.LOGGER.warn("[RealStockFeed] Failed applying {}: {}", mapping.ticker, e.getMessage());
+        }
+    }
+
+    private static net.minecraft.world.item.ItemStack resolveItemStack(String itemId) {
+        try {
+            net.minecraft.resources.ResourceLocation location = net.minecraft.resources.ResourceLocation.parse(itemId);
+            net.minecraft.world.item.Item item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(location);
+            return item == net.minecraft.world.item.Items.AIR
+                    ? net.minecraft.world.item.ItemStack.EMPTY
+                    : new net.minecraft.world.item.ItemStack(item);
+        } catch (Exception e) {
+            return net.minecraft.world.item.ItemStack.EMPTY;
         }
     }
 
