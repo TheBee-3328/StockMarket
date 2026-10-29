@@ -537,7 +537,6 @@ public final class RealStockPriceFeed implements AutoCloseable {
                     mappedTickers.add(ticker);
                     mappings.add(new Mapping(ticker, itemId, scale));
                 });
-            }
             if (enabled && !mappings.isEmpty() && !hasUsableApiKey()) {
                 StockMarketMod.LOGGER.warn("[RealStockFeed] Add a valid Finnhub API token to enable configured tickers.");
             }
