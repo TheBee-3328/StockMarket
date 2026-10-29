@@ -1,3 +1,4 @@
+import com.google.gson.JsonParser;
 package net.kroia.stockmarket.stockmarket.market;
 
 import org.junit.jupiter.api.Test;
@@ -139,7 +140,19 @@ class RealStockPriceFeedTest {
             feed.performRefreshBatch();
 
             assertTrue(Files.exists(missingConfig), "The default config should be generated");
-            assertEquals(0, requests.get(), "Empty default mappings and placeholder token must be inert");
+            assertEquals(0, requests.get(), "The placeholder token must keep default mappings inert");
+
+            var generated = JsonParser.parseString(Files.readString(missingConfig)).getAsJsonObject();
+            var mappings = generated.getAsJsonArray("mappings");
+            assertEquals(18, mappings.size(), "The default config should include all requested markets");
+            String generatedText = Files.readString(missingConfig);
+            assertTrue(generatedText.contains("\"ticker\": \"GLD\""));
+            assertTrue(generatedText.contains("\"ticker\": \"QQQ\""));
+            assertTrue(generatedText.contains("\"ticker\": \"SPY\""));
+            assertTrue(generatedText.contains("\"ticker\": \"FXE\""));
+            assertTrue(generatedText.contains("\"ticker\": \"IBIT\""));
+            assertTrue(generatedText.contains("\"ticker\": \"GOOGL\""));
+            assertTrue(generatedText.contains("\"ticker\": \"GOOG\""));
         } finally {
             feed.close();
         }
