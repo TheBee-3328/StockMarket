@@ -10,7 +10,7 @@ StockMarket is a Minecraft mod that brings a better way for trading to the game.
 </div>
 </td>
 
-You want to support me?<br>
+Want to support the original mod creator, Alex Krieg?<br>
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/alexkrieg)
 ---
 
@@ -49,65 +49,18 @@ You want to support me?<br>
 
 ---
 ## Downloads
-<!--
-[CurseForge](https://www.curseforge.com/minecraft/mc-mods/stockmarket)
 
+### Latest successful build
 
-| Version | Download |
-|---------|----------|
-|1.3.0    | [![Minecraft Version](https://img.shields.io/badge/Minecraft-1.21.1-green)](https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6002691)<br>[![Minecraft Version](https://img.shields.io/badge/Minecraft-1.20.6-blue)](https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6002684)<br>[![Minecraft Version](https://img.shields.io/badge/Minecraft-1.20.4-blue)](https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6002682)<br>[![Minecraft Version](https://img.shields.io/badge/Minecraft-1.20.3-blue)](https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6002681)<br>[![Minecraft Version](https://img.shields.io/badge/Minecraft-1.20.2-blue)](https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6002679)<br>[![Minecraft Version](https://img.shields.io/badge/Minecraft-1.20.1-blue)](https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6002676)<br>[![Minecraft Version](https://img.shields.io/badge/Minecraft-1.19.4-blue)](https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6004639)<br>[![Minecraft Version](https://img.shields.io/badge/Minecraft-1.19.3-blue)](https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6004641)<br>[![Minecraft Version](https://img.shields.io/badge/Minecraft-1.19.2-blue)](https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6004643) |
+**Minecraft 1.21.1 · NeoForge**
 
--->
-[CurseForge](https://www.curseforge.com/minecraft/mc-mods/stockmarket)
-| Minecraft | Fabric | Forge | Quilt | Neoforge |
-|-----------|--------|-------|-------|----------|
-| ![Minecraft Version](https://img.shields.io/badge/Minecraft-1.21.1-green)    | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-fabric-1.21.1] [![Version](https://img.shields.io/badge/v2.1.0--alpha-orange)][2.1.0-fabric-1.21.1] <br> |                                                                                  |                                                                                   | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-neoforge-1.21.1] [![Version](https://img.shields.io/badge/v2.1.0--alpha-orange)][2.1.0-neoforge-1.21.1]  |
-| ![Minecraft Version](https://img.shields.io/badge/Minecraft-1.21-green)      | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-fabric-1.21]   <br> |                                                                                  |                                                                                   | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-neoforge-1.21]    |
-| ![Minecraft Version](https://img.shields.io/badge/Minecraft-1.20.6-green)    | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-fabric-1.20.6] <br> |                                                                                  |                                                                                   | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-neoforge-1.20.6]  |
-| ![Minecraft Version](https://img.shields.io/badge/Minecraft-1.20.4-green)    | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-fabric-1.20.4] <br> | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-forge-1.20.4] <br> | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-quilt-1.20.4] <br>  |                                                                                 |
-| ![Minecraft Version](https://img.shields.io/badge/Minecraft-1.20.2-green)    | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-fabric-1.20.2] <br> | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-forge-1.20.2] <br> | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-quilt-1.20.2] <br>  |                                                                                 |
-| ![Minecraft Version](https://img.shields.io/badge/Minecraft-1.20.1-green)    | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-fabric-1.20.1] <br> | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-forge-1.20.1] <br> | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-quilt-1.20.1] <br>  |                                                                                 |
-| ![Minecraft Version](https://img.shields.io/badge/Minecraft-1.19.4-green)    | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-fabric-1.19.4] <br> | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-forge-1.19.4] <br> |                                                                             <br>  |                                                                                 |
-| ![Minecraft Version](https://img.shields.io/badge/Minecraft-1.19.3-green)    | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-fabric-1.19.3] <br> | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-forge-1.19.3] <br> | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-quilt-1.19.3] <br>  |                                                                                 |
-| ![Minecraft Version](https://img.shields.io/badge/Minecraft-1.19.2-green)    | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-fabric-1.19.2] <br> | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-forge-1.19.2] <br> | [![Version](https://img.shields.io/badge/v1.3.1-green)][1.3.1-quilt-1.19.2] <br>  |                                                                                 |
+[**Download the latest StockMarket build**](https://nightly.link/TheBee-3328/StockMarket/workflows/build-neoforge/main/stockmarket-neoforge.zip)
 
+The link follows the latest successful build of the `main` branch. The ZIP contains the NeoForge JAR (`stockmarket-neoforge.jar`) and its SHA-256 checksum file.
 
+This is a continuously built artifact, not a pinned versioned release. To see the source, build status, and workflow history, visit [Build NeoForge on GitHub Actions](https://github.com/TheBee-3328/StockMarket/actions/workflows/build-neoforge.yml).
 
-
-
-<!--	Links to curseforge:	-->
-[2.1.0-neoforge-1.21.1]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/files/8656714
-[2.1.0-fabric-1.21.1]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/files/8656710
-
-[1.3.1-fabric-1.21.1]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200719
-[1.3.1-fabric-1.21]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200713
-[1.3.1-fabric-1.20.6]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200704
-[1.3.1-fabric-1.20.4]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200697
-[1.3.1-fabric-1.20.2]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200673
-[1.3.1-fabric-1.20.1]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200639
-[1.3.1-fabric-1.19.4]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200635
-[1.3.1-fabric-1.19.3]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200628
-[1.3.1-fabric-1.19.2]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200617
-
-[1.3.1-forge-1.20.4]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200698
-[1.3.1-forge-1.20.2]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200684
-[1.3.1-forge-1.20.1]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200647
-[1.3.1-forge-1.19.4]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200638
-[1.3.1-forge-1.19.3]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200631
-[1.3.1-forge-1.19.2]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200620
-					 
-[1.3.1-quilt-1.20.4]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200701
-[1.3.1-quilt-1.20.2]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200692
-[1.3.1-quilt-1.20.1]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200659
-[1.3.1-quilt-1.19.3]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200632
-[1.3.1-quilt-1.19.2]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200622
-
-[1.3.1-neoforge-1.21.1]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200720
-[1.3.1-neoforge-1.21]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200717
-[1.3.1-neoforge-1.20.6]:https://www.curseforge.com/minecraft/mc-mods/stockmarket/download/6200707
-
-
-
+[Browse the project's CurseForge page](https://www.curseforge.com/minecraft/mc-mods/stockmarket) for the original published releases.
 
 ---
 ## Blocks
