@@ -14,7 +14,7 @@ Example configuration (not generated automatically):
 ```json
 {
   "enabled": true,
-  "apiKey": "YOUR_REAL_TWELVE_DATA_API_KEY",
+  "apiKey": "REPLACE_WITH_YOUR_TWELVE_DATA_API_KEY",
   "refreshSeconds": 60,
   "mappings": [
     { "ticker": "AAPL", "itemId": "examplemod:apple_share", "scale": 1.0 },
