@@ -358,6 +358,12 @@ public final class RealStockPriceFeed implements AutoCloseable {
                         StockMarketMod.LOGGER.warn("[RealStockFeed] Skipping invalid ticker mapping.");
                         return;
                     }
+                    // Never let stock symbols take over vanilla item economics, even if
+                    // a server still has an older generated config from a prior build.
+                    if (itemId.startsWith("minecraft:")) {
+                        StockMarketMod.LOGGER.warn("[RealStockFeed] Skipping {}: vanilla item mappings are unsafe; configure a dedicated share-token item from another namespace.", ticker);
+                        return;
+                    }
                     if (!mappedItemIds.add(itemId)) {
                         StockMarketMod.LOGGER.warn("[RealStockFeed] Skipping {}: item {} is already mapped to another ticker.",
                                 ticker, itemId);
