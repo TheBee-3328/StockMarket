@@ -35,6 +35,11 @@ dependencies {
     }
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    // Production marks these mod dependencies compile-only because players install them
+    // separately. The common test runtime still needs their types: chart-history tests
+    // construct BankSystem ItemID objects, which reference ModUtilities APIs.
+    testRuntimeOnly("com.github.KROIA.BankSystem:banksystem-common:$rootProject.banksystem_version")
+    testRuntimeOnly("com.github.KROIA.MC_ModUtilities:modutilities-common:$rootProject.modutilities_version")
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
 
 }
