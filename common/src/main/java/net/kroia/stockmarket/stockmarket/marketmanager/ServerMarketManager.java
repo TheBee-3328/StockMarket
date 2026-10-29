@@ -57,6 +57,20 @@ public class ServerMarketManager implements ServerSaveableChunked, IServerMarket
 
     }
 
+    /**
+     * Detaches all volatility/liquidity plugins from an externally price-led market.
+     * The real-stock feed calls this when it adopts a previously-created share market,
+     * preventing legacy auto-subscribed plugins from overwriting the delayed OHLC replay.
+     */
+    public void detachMarketFromPlugins(ItemID marketID) {
+        if (marketID == null || BACKEND_INSTANCES == null || BACKEND_INSTANCES.PLUGIN_MANAGER == null)
+            return;
+        var pluginManager = BACKEND_INSTANCES.PLUGIN_MANAGER.getSync();
+        if (pluginManager != null) {
+            pluginManager.removeCache(marketID);
+        }
+    }
+
     @Override
     public ItemID getTradingCurrencyID()
     {
