@@ -33,7 +33,7 @@ Feed ownership is stored in the market's persisted NBT. The same ticker can ther
 
 ## Rate limits and limitations
 
-- Refresh interval is at least 60 seconds, but it is automatically increased when necessary to stay under a conservative 800-credit/day free-tier budget (one `/price` credit per ticker). Five tickers therefore refresh no more often than about every nine minutes at this budget, even if `refreshSeconds` is 60.
+- Twelve Data's Basic tier has an 800-credit/day limit and 8 credits/minute; each `/price` ticker costs one API credit. To leave a safety margin for failures or other use of the same key, the feed budgets itself for 720 credits/day. Five tickers therefore refresh no more often than about every ten minutes, even if `refreshSeconds` is 60. If other apps use this same API key, reduce the feed budget/watchlist further to avoid exhausting the shared quota.
 - Requests are spaced at least 8.5 seconds apart. A 429 or a provider response that reports quota/rate-limit exhaustion stops the active batch immediately and applies a five-minute backoff.
 - HTTP/API errors and invalid quotes leave the last valid price untouched.
 - Shutdown marks the feed closed before interrupting its worker. Any quote callbacks queued by an older feed instance are ignored, and an unavailable/malformed config disables the feed safely.
