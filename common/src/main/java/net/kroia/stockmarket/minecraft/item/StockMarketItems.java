@@ -41,6 +41,8 @@ public class StockMarketItems {
     
 
     // Dedicated market-share items used by the optional Finnhub feed.
+    /** Stable USD quote-unit token used as the fixed HAVE leg in pair mode. */
+    public static final RegistrySupplier<Item> SHARE_USD = registerShare("share_usd");
     public static final RegistrySupplier<Item> SHARE_XAU = registerShare("share_xau");
     public static final RegistrySupplier<Item> SHARE_NAS100 = registerShare("share_nas100");
     public static final RegistrySupplier<Item> SHARE_SP500 = registerShare("share_sp500");
