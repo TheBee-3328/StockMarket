@@ -67,7 +67,7 @@ class NetheriteExchangeAccountingTest {
         assertTrue(accounting.withdrawNetherite(player, 1, SCALE));
         assertEquals(500 * SCALE, accounting.getNetheritePrincipalUsdRaw(player));
         assertEquals(2_900 * SCALE, accounting.getRealizedProfitUsdRaw(player));
-        assertEquals(500 * SCALE, accounting.getAvailableProfitAllowanceRaw(player));
+        assertEquals(950 * SCALE, accounting.getAvailableProfitAllowanceRaw(player));
         assertEquals(2, accounting.getMaxNetheriteWithdrawals(player, SCALE));
     }
 
