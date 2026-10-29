@@ -498,10 +498,10 @@ public class MatchingEngine
                 long dollarsNeeded = Math.max(0L, estimatedWantCost - transactionMoneyBalance);
                 if (dollarsNeeded < 0) dollarsNeeded = 0;
 
-                long haveToSell = (haveSamplePrice > 0) ? dollarsNeeded / haveSamplePrice : 0;
-                if (haveSamplePrice > 0 && haveToSell * haveSamplePrice / SF < dollarsNeeded)
-                    haveToSell += 1;  // round up
-
+                // One raw have-item yields price/SF raw currency; round up to cover the budget.
+                long haveToSell = (haveSamplePrice > 0)
+                        ? (long) Math.ceil((double) dollarsNeeded * SF / haveSamplePrice)
+                        : 0L;
                 haveToSell = Math.min(haveToSell, haveVolume);
 
                 if (haveToSell > 0)
