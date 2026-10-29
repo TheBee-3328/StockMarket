@@ -16,6 +16,7 @@ import net.kroia.modutilities.networking.multi_server.MultiServerManager;
 import net.kroia.stockmarket.api.StockMarketAPI;
 import net.kroia.stockmarket.api.integration.IStockMarketIntegration;
 import net.kroia.stockmarket.api.marketmanager.IClientMarketManager;
+import net.kroia.stockmarket.stockmarket.market.RealStockPriceFeed;
 import net.kroia.stockmarket.stockmarket.marketmanager.StockMarketIntegrationImpl;
 import net.kroia.stockmarket.api.pluginmanager.IClientPluginManager;
 import net.kroia.stockmarket.minecraft.block.StockMarketBlocks;
