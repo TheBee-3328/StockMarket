@@ -25,7 +25,8 @@ public abstract class StockMarketGuiScreen extends GuiScreen {
     }
 
 
-    public static final float guiScale = 0.5f;
+    // 0.5 -> 0.65 makes StockMarket screens approximately 30% larger.
+    public static final float guiScale = 0.65f;
 
     protected StockMarketGuiScreen(Component pTitle) {
         super(pTitle);
