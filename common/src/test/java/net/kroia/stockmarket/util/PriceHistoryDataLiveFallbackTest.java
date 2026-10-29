@@ -1,7 +1,5 @@
 package net.kroia.stockmarket.util;
 
-import net.kroia.banksystem.util.ItemID;
-import net.kroia.stockmarket.data.table.record.MarketPriceStruct;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -9,52 +7,54 @@ import static org.junit.jupiter.api.Assertions.*;
 class PriceHistoryDataLiveFallbackTest {
 
     @Test
-    void liveOnlyFallbackContainsCurrentOhlcCandleAndNoOlderDataMarker() {
-        ItemID itemID = new ItemID((short) 42);
+    void liveCandlePreservesOhlcTimestampVolumeAndCurrentPrice() {
         long timestamp = 1_700_000_000_000L;
-        MarketPriceStruct current = new MarketPriceStruct(
-                (short) 42, 1_250L, 1_200L, 1_300L, timestamp, 7.0f);
 
-        PriceHistoryData data = PriceHistoryData.fromLiveMarketCandle(itemID, 100, current, 1_280L);
+        LiveCandleFallback.Seed seed = LiveCandleFallback.normalize(
+                true, 1_250L, 1_200L, 1_300L, timestamp, 7.0f, 1_280L, 99L);
 
-        assertEquals(1, data.getCandles().size());
-        PriceHistoryData.Candle candle = data.getCandles().getFirst();
-        assertEquals(timestamp, candle.openTimestamp);
-        assertEquals(1_250L, candle.open);
-        assertEquals(1_300L, candle.high);
-        assertEquals(1_200L, candle.low);
-        assertEquals(7.0f, candle.tradedVolume);
-        assertEquals(1_280L, data.getCurrentMarketPrice());
-        assertEquals(PriceHistoryData.NO_OLDER_DATA, data.getOldestAvailableTimestamp());
-        assertFalse(data.isTruncated());
+        assertEquals(timestamp, seed.timestamp());
+        assertEquals(1_250L, seed.open());
+        assertEquals(1_300L, seed.high());
+        assertEquals(1_200L, seed.low());
+        assertEquals(7.0f, seed.volume());
+        assertEquals(1_280L, seed.currentPrice());
     }
 
     @Test
-    void missingLiveCandleStillCreatesSingleCandleAtCurrentPrice() {
-        ItemID itemID = new ItemID((short) 43);
+    void missingLiveCandleCreatesFlatCandleAtCurrentPrice() {
+        LiveCandleFallback.Seed seed = LiveCandleFallback.normalize(
+                false, 0L, 0L, 0L, 0L, 0.0f, 975L, 1_700_000_000_000L);
 
-        PriceHistoryData data = PriceHistoryData.fromLiveMarketCandle(itemID, 100, null, 975L);
-
-        assertEquals(1, data.getCandles().size());
-        PriceHistoryData.Candle candle = data.getCandles().getFirst();
-        assertEquals(975L, candle.open);
-        assertEquals(975L, candle.high);
-        assertEquals(975L, candle.low);
-        assertEquals(975L, data.getCurrentMarketPrice());
+        assertEquals(1_700_000_000_000L, seed.timestamp());
+        assertEquals(975L, seed.open());
+        assertEquals(975L, seed.high());
+        assertEquals(975L, seed.low());
+        assertEquals(0.0f, seed.volume());
+        assertEquals(975L, seed.currentPrice());
     }
 
     @Test
-    void invalidOhlcUsesCurrentPriceToAvoidZeroPriceChart() {
-        ItemID itemID = new ItemID((short) 44);
-        MarketPriceStruct invalid = new MarketPriceStruct(
-                (short) 44, 0L, 0L, 0L, 1L, 0.0f);
+    void invalidOhlcUsesCurrentPriceAndClampsNegativeVolume() {
+        LiveCandleFallback.Seed seed = LiveCandleFallback.normalize(
+                true, 0L, 0L, 0L, 1L, -4.0f, 815L, 99L);
 
-        PriceHistoryData data = PriceHistoryData.fromLiveMarketCandle(itemID, 100, invalid, 815L);
+        assertEquals(1L, seed.timestamp());
+        assertEquals(815L, seed.open());
+        assertEquals(815L, seed.high());
+        assertEquals(815L, seed.low());
+        assertEquals(0.0f, seed.volume());
+        assertEquals(815L, seed.currentPrice());
+    }
 
-        PriceHistoryData.Candle candle = data.getCandles().getFirst();
-        assertEquals(815L, candle.open);
-        assertEquals(815L, candle.high);
-        assertEquals(815L, candle.low);
-        assertEquals(815L, data.getCurrentMarketPrice());
+    @Test
+    void zeroCurrentPriceFallsBackToLiveOhlc() {
+        LiveCandleFallback.Seed seed = LiveCandleFallback.normalize(
+                true, 1_250L, 1_200L, 1_300L, 1_700_000_000_000L, 2.0f, 0L, 99L);
+
+        assertEquals(1_300L, seed.currentPrice());
+        assertEquals(1_250L, seed.open());
+        assertEquals(1_300L, seed.high());
+        assertEquals(1_200L, seed.low());
     }
 }
