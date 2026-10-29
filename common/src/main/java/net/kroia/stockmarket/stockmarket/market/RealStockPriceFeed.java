@@ -1,5 +1,7 @@
 package net.kroia.stockmarket.stockmarket.market;
 
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.kroia.banksystem.util.ItemID;
@@ -51,6 +53,107 @@ public final class RealStockPriceFeed implements AutoCloseable {
     private static final long MIN_INTER_SYMBOL_DELAY_MS = 1_100L;
     private static final long RATE_LIMIT_BACKOFF_MS = 5 * 60_000L;
     private static final String API_KEY_PLACEHOLDER = "REPLACE_WITH_YOUR_FINNHUB_API_TOKEN";
+
+    /**
+     * Default US-listed quote sources for 18 in-game markets. The five non-equity
+     * instruments use explicitly labelled US-listed proxies because Finnhub's
+     * /quote endpoint is documented for US stocks, not native FX/crypto/index quotes.
+     * Scales were calibrated from public market snapshots on 2026-10-29 and are approximate.
+     */
+    private static final String DEFAULT_MAPPINGS_JSON = """
+[
+    {
+      "ticker": "GLD",
+      "itemId": "stockmarket:share_xau",
+      "scale": 10.918
+    },
+    {
+      "ticker": "QQQ",
+      "itemId": "stockmarket:share_nas100",
+      "scale": 41.232
+    },
+    {
+      "ticker": "SPY",
+      "itemId": "stockmarket:share_sp500",
+      "scale": 10.055
+    },
+    {
+      "ticker": "FXE",
+      "itemId": "stockmarket:share_eurusd",
+      "scale": 0.010815
+    },
+    {
+      "ticker": "IBIT",
+      "itemId": "stockmarket:share_btc",
+      "scale": 1762.2
+    },
+    {
+      "ticker": "NVDA",
+      "itemId": "stockmarket:share_nvda",
+      "scale": 1
+    },
+    {
+      "ticker": "GOOGL",
+      "itemId": "stockmarket:share_googl",
+      "scale": 1
+    },
+    {
+      "ticker": "GOOG",
+      "itemId": "stockmarket:share_goog",
+      "scale": 1
+    },
+    {
+      "ticker": "AAPL",
+      "itemId": "stockmarket:share_aapl",
+      "scale": 1
+    },
+    {
+      "ticker": "MSFT",
+      "itemId": "stockmarket:share_msft",
+      "scale": 1
+    },
+    {
+      "ticker": "JPM",
+      "itemId": "stockmarket:share_jpm",
+      "scale": 1
+    },
+    {
+      "ticker": "XOM",
+      "itemId": "stockmarket:share_xom",
+      "scale": 1
+    },
+    {
+      "ticker": "LLY",
+      "itemId": "stockmarket:share_lly",
+      "scale": 1
+    },
+    {
+      "ticker": "WMT",
+      "itemId": "stockmarket:share_wmt",
+      "scale": 1
+    },
+    {
+      "ticker": "CAT",
+      "itemId": "stockmarket:share_cat",
+      "scale": 1
+    },
+    {
+      "ticker": "V",
+      "itemId": "stockmarket:share_v",
+      "scale": 1
+    },
+    {
+      "ticker": "DIS",
+      "itemId": "stockmarket:share_dis",
+      "scale": 1
+    },
+    {
+      "ticker": "TSLA",
+      "itemId": "stockmarket:share_tsla",
+      "scale": 1
+    }
+  ]
+""";
 
     private final MinecraftServer server;
     private final ServerMarketManager manager;
@@ -367,16 +470,18 @@ public final class RealStockPriceFeed implements AutoCloseable {
         try {
             Files.createDirectories(configPath.getParent());
             if (!Files.exists(configPath)) {
+                String defaultMappings = DEFAULT_MAPPINGS_JSON.strip();
                 String example = """
                         {
                           "enabled": true,
                           "apiKey": "REPLACE_WITH_YOUR_FINNHUB_API_TOKEN",
                           "refreshSeconds": 60,
-                          "mappings": []
+                          "useDefaultMappings": true,
+                          "mappings": %s
                         }
-                        """;
+                        """.formatted(defaultMappings);
                 Files.writeString(configPath, example, StandardCharsets.UTF_8);
-                StockMarketMod.LOGGER.info("[RealStockFeed] Created safe empty configuration at {}", configPath);
+                StockMarketMod.LOGGER.info("[RealStockFeed] Created configuration with 18 default market mappings at {}. The feed remains inactive until you add a Finnhub API token.", configPath);
             }
 
             JsonObject root = JsonParser.parseString(Files.readString(configPath, StandardCharsets.UTF_8)).getAsJsonObject();
@@ -388,8 +493,20 @@ public final class RealStockPriceFeed implements AutoCloseable {
             mappings.clear();
             Set<String> mappedItemIds = new HashSet<>();
             Set<String> mappedTickers = new HashSet<>();
-            if (root.has("mappings") && root.get("mappings").isJsonArray()) {
-                root.getAsJsonArray("mappings").forEach(element -> {
+            JsonArray configuredMappings = root.has("mappings") && root.get("mappings").isJsonArray()
+                    ? root.getAsJsonArray("mappings") : new JsonArray();
+            boolean useDefaultMappings = !root.has("useDefaultMappings")
+                    || root.get("useDefaultMappings").getAsBoolean();
+            if (configuredMappings.isEmpty() && useDefaultMappings) {
+                configuredMappings = JsonParser.parseString(DEFAULT_MAPPINGS_JSON).getAsJsonArray();
+                root.add("mappings", configuredMappings.deepCopy());
+                root.addProperty("useDefaultMappings", true);
+                Files.writeString(configPath,
+                        new GsonBuilder().setPrettyPrinting().create().toJson(root) + System.lineSeparator(),
+                        StandardCharsets.UTF_8);
+                StockMarketMod.LOGGER.info("[RealStockFeed] Added the default 18-market mapping set to {}. Set useDefaultMappings=false to keep mappings empty.", configPath);
+            }
+            configuredMappings.forEach(element -> {
                     if (!element.isJsonObject()) return;
                     JsonObject obj = element.getAsJsonObject();
                     String ticker = obj.has("ticker")
@@ -420,7 +537,6 @@ public final class RealStockPriceFeed implements AutoCloseable {
                     mappedTickers.add(ticker);
                     mappings.add(new Mapping(ticker, itemId, scale));
                 });
-            }
             if (enabled && !mappings.isEmpty() && !hasUsableApiKey()) {
                 StockMarketMod.LOGGER.warn("[RealStockFeed] Add a valid Finnhub API token to enable configured tickers.");
             }

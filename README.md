@@ -38,6 +38,7 @@ You want to support me?<br>
 - Implementation of a [matching engine](#matching-engine) inspired by the real market.
 - Configurable [plugins](#plugins) that provide the market with liquidity, volatility and price movements.
 - A JSON-configurable [news event system](documentation/user-guide/news-system/overview.md) that publishes headlines with [pictures](documentation/user-guide/news-system/pictures.md) and moves market prices — players follow the market through a craftable newspaper item. Server admins and content creators can [author their own events](documentation/user-guide/news-system/authoring-tutorial.md) without touching code.
+- Optional experimental Finnhub real-stock feed with configurable market mappings; see [the mapping guide](documentation/real-stocks-mappings.md).
 
 ## Dependencies
 - [Bank System Mod](https://github.com/KROIA/BankSystem)

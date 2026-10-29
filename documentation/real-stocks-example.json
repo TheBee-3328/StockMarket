@@ -1,0 +1,98 @@
+{
+  "enabled": true,
+  "apiKey": "REPLACE_WITH_YOUR_FINNHUB_API_TOKEN",
+  "refreshSeconds": 60,
+  "useDefaultMappings": true,
+  "mappings": [
+    {
+      "ticker": "GLD",
+      "itemId": "stockmarket:share_xau",
+      "scale": 10.918
+    },
+    {
+      "ticker": "QQQ",
+      "itemId": "stockmarket:share_nas100",
+      "scale": 41.232
+    },
+    {
+      "ticker": "SPY",
+      "itemId": "stockmarket:share_sp500",
+      "scale": 10.055
+    },
+    {
+      "ticker": "FXE",
+      "itemId": "stockmarket:share_eurusd",
+      "scale": 0.010815
+    },
+    {
+      "ticker": "IBIT",
+      "itemId": "stockmarket:share_btc",
+      "scale": 1762.2
+    },
+    {
+      "ticker": "NVDA",
+      "itemId": "stockmarket:share_nvda",
+      "scale": 1
+    },
+    {
+      "ticker": "GOOGL",
+      "itemId": "stockmarket:share_googl",
+      "scale": 1
+    },
+    {
+      "ticker": "GOOG",
+      "itemId": "stockmarket:share_goog",
+      "scale": 1
+    },
+    {
+      "ticker": "AAPL",
+      "itemId": "stockmarket:share_aapl",
+      "scale": 1
+    },
+    {
+      "ticker": "MSFT",
+      "itemId": "stockmarket:share_msft",
+      "scale": 1
+    },
+    {
+      "ticker": "JPM",
+      "itemId": "stockmarket:share_jpm",
+      "scale": 1
+    },
+    {
+      "ticker": "XOM",
+      "itemId": "stockmarket:share_xom",
+      "scale": 1
+    },
+    {
+      "ticker": "LLY",
+      "itemId": "stockmarket:share_lly",
+      "scale": 1
+    },
+    {
+      "ticker": "WMT",
+      "itemId": "stockmarket:share_wmt",
+      "scale": 1
+    },
+    {
+      "ticker": "CAT",
+      "itemId": "stockmarket:share_cat",
+      "scale": 1
+    },
+    {
+      "ticker": "V",
+      "itemId": "stockmarket:share_v",
+      "scale": 1
+    },
+    {
+      "ticker": "DIS",
+      "itemId": "stockmarket:share_dis",
+      "scale": 1
+    },
+    {
+      "ticker": "TSLA",
+      "itemId": "stockmarket:share_tsla",
+      "scale": 1
+    }
+  ]
+}
