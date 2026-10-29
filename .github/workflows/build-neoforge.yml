@@ -36,11 +36,11 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/../../BankSystem"
           git clone --depth 1 https://github.com/KROIA/BankSystem.git "$GITHUB_WORKSPACE/../../BankSystem/mc_1.21.1_BankSystem"
 
-      - name: Build BankSystem common and NeoForge artifacts
+      - name: Build BankSystem common, Fabric and NeoForge artifacts
         working-directory: ../../BankSystem/mc_1.21.1_BankSystem
         run: |
           chmod +x gradlew
-          ./gradlew :common:build :neoforge:build --no-daemon
+          ./gradlew :common:build :fabric:build :neoforge:build --no-daemon
 
       - name: Build NeoForge mod
         run: |
