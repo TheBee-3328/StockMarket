@@ -64,6 +64,11 @@ public class ServerMarketTestSuite extends TestSuite {
         addTest("load_missingOrderbook", this::test_load_missingOrderbook);
         addTest("load_restoresCandleState", this::test_load_restoresCandleState);
 
+        // External stock-feed ownership and quote refresh regression coverage
+        addTest("externalStockFeed_unownedMarketCannotBeUpdated", this::test_externalStockFeed_unownedMarketCannotBeUpdated);
+        addTest("externalStockFeed_multipleQuotesUpdateSameOwnedMarket", this::test_externalStockFeed_multipleQuotesUpdateSameOwnedMarket);
+        addTest("externalStockFeed_ownershipSurvivesSaveLoad", this::test_externalStockFeed_ownershipSurvivesSaveLoad);
+
         // Candle Tracking
         addTest("getCurrentMarketPriceStructAndReset_resets", this::test_getCurrentMarketPriceStructAndReset_resets);
 
@@ -350,6 +355,89 @@ public class ServerMarketTestSuite extends TestSuite {
             r = assertEquals("Market price should be restored", 150L, serverMarket.getCurrentMarketPrice());
             if (!r.passed()) return r;
             return pass("ServerMarket save/load round trip preserves market price");
+        } catch (Exception e) {
+            return fail("Exception: " + e.getMessage());
+        }
+    }
+
+    private TestResult test_externalStockFeed_unownedMarketCannotBeUpdated() {
+        try {
+            resetMarket(100, true);
+            ServerMarket market = (ServerMarket) serverMarket;
+
+            boolean changed = market.setExternalReferencePrice("AAPL", 250);
+            TestResult r = assertFalse("An ordinary market must reject a stock-feed quote", changed);
+            if (!r.passed()) return r;
+            r = assertEquals("Rejected quote must leave the simulated price unchanged", 100L,
+                    serverMarket.getCurrentMarketPrice());
+            if (!r.passed()) return r;
+            return pass("Unowned markets reject external stock quotes");
+        } catch (Exception e) {
+            return fail("Exception: " + e.getMessage());
+        }
+    }
+
+    private TestResult test_externalStockFeed_multipleQuotesUpdateSameOwnedMarket() {
+        try {
+            resetMarket(100, true);
+            ServerMarket market = (ServerMarket) serverMarket;
+            TestResult r = assertTrue("Newly-created market can be claimed by AAPL",
+                    market.claimExternalPriceFeedOwnership("AAPL"));
+            if (!r.passed()) return r;
+
+            r = assertTrue("First external quote should apply",
+                    market.setExternalReferencePrice("AAPL", 200));
+            if (!r.passed()) return r;
+            r = assertTrue("Second external quote should apply to the same market",
+                    market.setExternalReferencePrice("AAPL", 300));
+            if (!r.passed()) return r;
+            r = assertTrue("Third external quote should apply to the same market",
+                    market.setExternalReferencePrice("AAPL", 400));
+            if (!r.passed()) return r;
+
+            r = assertEquals("The latest quote should become the anchor price", 400L,
+                    serverMarket.getCurrentMarketPrice());
+            if (!r.passed()) return r;
+            r = assertFalse("A market owned by AAPL must not be re-claimed by MSFT",
+                    market.claimExternalPriceFeedOwnership("MSFT"));
+            if (!r.passed()) return r;
+            return pass("Multiple quotes update one ticker-owned market without changing ownership");
+        } catch (Exception e) {
+            return fail("Exception: " + e.getMessage());
+        }
+    }
+
+    private TestResult test_externalStockFeed_ownershipSurvivesSaveLoad() {
+        try {
+            resetMarket(100, true);
+            ServerMarket original = (ServerMarket) serverMarket;
+            TestResult r = assertTrue("Market can be claimed by AAPL",
+                    original.claimExternalPriceFeedOwnership("AAPL"));
+            if (!r.passed()) return r;
+            r = assertTrue("Initial quote should apply",
+                    original.setExternalReferencePrice("AAPL", 275));
+            if (!r.passed()) return r;
+
+            CompoundTag tag = new CompoundTag();
+            r = assertTrue("Owned market should save", original.save(tag));
+            if (!r.passed()) return r;
+
+            ServerMarket restored = new ServerMarket(itemID);
+            r = assertTrue("Owned market should load", restored.load(tag));
+            if (!r.passed()) return r;
+            r = assertTrue("Feed ownership should survive persistence",
+                    restored.isOwnedByExternalPriceFeed("AAPL"));
+            if (!r.passed()) return r;
+            r = assertTrue("A later quote should update the restored market",
+                    restored.setExternalReferencePrice("AAPL", 325));
+            if (!r.passed()) return r;
+            r = assertEquals("Restored market should contain the latest quote", 325L,
+                    restored.getCurrentMarketPrice());
+            if (!r.passed()) return r;
+            r = assertFalse("Restored market ownership must not allow another ticker",
+                    restored.isOwnedByExternalPriceFeed("MSFT"));
+            if (!r.passed()) return r;
+            return pass("Stock-feed ownership and subsequent quote updates survive save/load");
         } catch (Exception e) {
             return fail("Exception: " + e.getMessage());
         }
