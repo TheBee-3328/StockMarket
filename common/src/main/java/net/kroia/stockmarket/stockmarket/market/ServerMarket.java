@@ -166,6 +166,7 @@ public class ServerMarket implements ServerSaveable, IServerMarket {
     public boolean setExternalReferencePrice(String ticker, long newPrice)
     {
         if (newPrice <= 0 || !isOwnedByExternalPriceFeed(ticker)) return false;
+        long previous = this.currentMarketPrice;
         this.currentMarketPrice = newPrice;
         if ("USD".equalsIgnoreCase(ticker)) {
             // The USD quote-unit is a fixed 1.00 base, not a floating asset.
@@ -179,6 +180,7 @@ public class ServerMarket implements ServerSaveable, IServerMarket {
         }
         this.candleLowPrice = Math.min(this.candleLowPrice, newPrice);
         this.candleHighPrice = Math.max(this.candleHighPrice, newPrice);
+        if (previous <= 0) this.candleOpenPrice = newPrice;
         return true;
     }
     @Override
