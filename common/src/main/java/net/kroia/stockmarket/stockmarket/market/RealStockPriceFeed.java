@@ -486,10 +486,26 @@ public final class RealStockPriceFeed implements AutoCloseable {
                 }
                 stockMarket = candidate;
             } else {
-                var created = manager.createMarket(id);
+                // External prices own this market's movement. Create it with the
+                // plugin-auto-subscribe opt-out set BEFORE the manager's subscribe pass.
+                var created = manager.createMarketWithConfig(id,
+                        new MarketConfig(true, (float) (candle.open() * mapping.scale), 10f, true));
                 if (!(created instanceof ServerMarket candidate)) return;
                 if (!candidate.claimExternalPriceFeedOwnership(mapping.ticker)) return;
                 stockMarket = candidate;
+                mapping.pluginsDetached = true; // no plugins were subscribed on creation
+            }
+
+            // A legacy feed-owned market might already have plugin-driven volatility.
+            // Detach those subscriptions once; thereafter only the provider-candle
+            // replay controls the market price.
+            stockMarket.getSettings().ignorePluginAutosubscribe = true;
+            if (!mapping.pluginsDetached && SERVER_PLUGIN_MANAGER_AVAILABLE()) {
+                var pluginManager = StockMarketModBackend.getServerInstancesPluginManager();
+                if (pluginManager != null) {
+                    pluginManager.removeCache(id);
+                    mapping.pluginsDetached = true;
+                }
             }
 
             long rawOpen = toRawPrice(candle.open() * mapping.scale);
@@ -693,6 +709,7 @@ public final class RealStockPriceFeed implements AutoCloseable {
         boolean warnedExistingMarket;
         volatile double lastPrice;
         volatile long lastUpdated;
+        boolean pluginsDetached;
 
         Mapping(String ticker, String itemId, double scale) {
             this.ticker = ticker;
