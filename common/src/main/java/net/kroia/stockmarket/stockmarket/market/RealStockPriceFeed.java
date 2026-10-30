@@ -49,6 +49,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class RealStockPriceFeed implements AutoCloseable {
     private static final long MIN_REFRESH_MS = 60_000L;
     private static final long CANDLE_DURATION_MS = 60_000L;
+    // Keep the most recent trading-session candle available during weekends, holidays,
+    // and outside US market hours. Finnhub returns no 1-minute candle in a 5-minute
+    // window while the exchange is closed, even though a valid last-session candle exists.
+    private static final long CANDLE_LOOKBACK_SECONDS = 7L * 24L * 60L * 60L;
     // Finnhub's free tier is commonly documented at 60 API calls/minute.
     // Pace at 55/min to leave headroom for retries and avoid edge-of-window bursts.
     private static final long MAX_CALLS_PER_MINUTE = 55L;
@@ -220,6 +224,13 @@ public final class RealStockPriceFeed implements AutoCloseable {
         // anchor it even when the external API token is absent.
         feed.ensureUsdMarketAnchored();
         feed.nextRefreshAt = System.currentTimeMillis() + feed.effectiveRefreshIntervalMs();
+        if (feed.enabled && !feed.mappings.isEmpty() && feed.hasUsableApiKey()) {
+            StockMarketMod.LOGGER.info("[RealStockFeed] Started Finnhub OHLC feed for {} tickers ({}s refresh, {}-day candle lookback).",
+                    feed.mappings.size(), feed.effectiveRefreshIntervalMs() / 1000L,
+                    CANDLE_LOOKBACK_SECONDS / (24L * 60L * 60L));
+        } else if (!feed.enabled) {
+            StockMarketMod.LOGGER.warn("[RealStockFeed] Feed is disabled in {}.", configPath);
+        }
         feed.refreshNow();
         return feed;
     }
@@ -344,7 +355,7 @@ public final class RealStockPriceFeed implements AutoCloseable {
             String symbol = URLEncoder.encode(ticker, StandardCharsets.UTF_8);
             String key = URLEncoder.encode(apiKey, StandardCharsets.UTF_8);
             long nowSeconds = System.currentTimeMillis() / 1000L;
-            long fromSeconds = nowSeconds - 5 * 60L;
+            long fromSeconds = nowSeconds - CANDLE_LOOKBACK_SECONDS;
             URI uri = URI.create("https://finnhub.io/api/v1/stock/candle?symbol=" + symbol
                     + "&resolution=1&from=" + fromSeconds + "&to=" + nowSeconds + "&token=" + key);
             HttpRequest request = HttpRequest.newBuilder(uri)
@@ -474,16 +485,31 @@ public final class RealStockPriceFeed implements AutoCloseable {
             var existing = manager.getMarket(id);
             ServerMarket stockMarket;
             if (existing != null) {
-                // Ownership is saved in the market NBT, so the same ticker is allowed
-                // to refresh after a restart but an unrelated/legacy market is not.
-                if (!(existing instanceof ServerMarket candidate)
-                        || !candidate.isOwnedByExternalPriceFeed(mapping.ticker)) {
+                if (!(existing instanceof ServerMarket candidate)) {
                     if (!mapping.warnedExistingMarket) {
-                        StockMarketMod.LOGGER.warn("[RealStockFeed] Mapping {} points to an existing market item {}; refusing to take it over. Use a dedicated share-token item ID.",
+                        StockMarketMod.LOGGER.warn("[RealStockFeed] Mapping {} points to an unsupported existing market {}; refusing to take it over.",
                                 mapping.ticker, mapping.itemId);
                         mapping.warnedExistingMarket = true;
                     }
                     return;
+                }
+
+                // Existing worlds already have these dedicated share-token markets
+                // persisted before the Finnhub feed starts. Adopt only this mod's
+                // explicit USD-quoted asset tokens; never adopt an arbitrary item
+                // market merely because it appears in real-stocks.json.
+                if (!candidate.isOwnedByExternalPriceFeed(mapping.ticker)) {
+                    if (!StockMarketItems.isUsdQuotedAsset(stack.getItem())
+                            || !candidate.claimExternalPriceFeedOwnership(mapping.ticker)) {
+                        if (!mapping.warnedExistingMarket) {
+                            StockMarketMod.LOGGER.warn("[RealStockFeed] Mapping {} points to existing market {}; it is not an unowned StockMarket share token (or is owned by another ticker), so it will not be adopted.",
+                                    mapping.ticker, mapping.itemId);
+                            mapping.warnedExistingMarket = true;
+                        }
+                        return;
+                    }
+                    StockMarketMod.LOGGER.info("[RealStockFeed] Adopted existing dedicated share-token market {} for {}.",
+                            mapping.itemId, mapping.ticker);
                 }
                 stockMarket = candidate;
             } else {
@@ -517,6 +543,11 @@ public final class RealStockPriceFeed implements AutoCloseable {
                     rawClose, candle.timestampMs(), CANDLE_DURATION_MS)) {
                 mapping.lastPrice = candle.close();
                 mapping.lastUpdated = candle.timestampMs();
+                if (!mapping.loggedFirstUpdate) {
+                    StockMarketMod.LOGGER.info("[RealStockFeed] First Finnhub candle applied for {} ({}); provider timestamp {}.",
+                            mapping.ticker, mapping.itemId, candle.timestampMs());
+                    mapping.loggedFirstUpdate = true;
+                }
             }
         } catch (Exception e) {
             if (!closed.get()) {
@@ -713,6 +744,7 @@ public final class RealStockPriceFeed implements AutoCloseable {
         volatile double lastPrice;
         volatile long lastUpdated;
         boolean pluginsDetached;
+        boolean loggedFirstUpdate;
 
         Mapping(String ticker, String itemId, double scale) {
             this.ticker = ticker;
