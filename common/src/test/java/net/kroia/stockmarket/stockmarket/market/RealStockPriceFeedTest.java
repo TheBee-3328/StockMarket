@@ -79,6 +79,42 @@ class RealStockPriceFeedTest {
     }
 
     @Test
+    void retrievesTheLastAvailableTradingSessionCandleWhenTheMarketIsClosed() throws Exception {
+        long nowSeconds = System.currentTimeMillis() / 1000L;
+        long lastSessionCandleStart = ((nowSeconds - 3L * 24L * 60L * 60L) / 60L) * 60L;
+        AtomicReference<URI> requestedUri = new AtomicReference<>();
+        RealStockPriceFeed feed = feed(request -> {
+            requestedUri.set(request.uri());
+            return new RealStockPriceFeed.HttpResponseData(200, """
+                    {"s":"ok",
+                     "t":[%d],
+                     "o":[201.0],
+                     "h":[205.0],
+                     "l":[199.0],
+                     "c":[204.0],
+                     "v":[1500]}
+                    """.formatted(lastSessionCandleStart));
+        });
+        try {
+            RealStockPriceFeed.FetchResult result = feed.fetchCandle("AAPL");
+
+            assertFalse(result.rateLimited());
+            assertNotNull(result.candle(),
+                    "The previous trading-session candle must remain available outside market hours");
+            assertEquals(lastSessionCandleStart * 1000L, result.candle().timestampMs());
+
+            String query = requestedUri.get().getQuery();
+            int fromStart = query.indexOf("from=") + "from=".length();
+            int fromEnd = query.indexOf('&', fromStart);
+            long requestedFrom = Long.parseLong(query.substring(fromStart, fromEnd));
+            assertTrue(requestedFrom <= lastSessionCandleStart,
+                    "The Finnhub lookback must reach beyond the last completed trading session");
+        } finally {
+            feed.close();
+        }
+    }
+
+    @Test
     void rejectsInvalidOhlcCandleWithoutReplacingLastPrice() throws Exception {
         long nowSeconds = System.currentTimeMillis() / 1000L;
         long completedStart = (nowSeconds / 60L) * 60L - 60L;
